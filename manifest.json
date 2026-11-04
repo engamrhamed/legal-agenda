@@ -1,0 +1,18 @@
+{
+  "name": "الأجندة القانونية وإدارة القضايا",
+  "short_name": "الأجندة القانونية",
+  "description": "نظام ذكي ومنظم لإدارة القضايا والملفات القانونية ومواعيد الجلسات اليومية للمحامين.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#111827",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "assets/icon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ]
+}
