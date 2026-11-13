@@ -446,20 +446,20 @@ function getOriginalHolidayShiftNotice(dateStr) {
 }
 
 // Datalist Comboboxes default choices (customizable in settings)
-const DEFAULT_LAWSUIT_TYPES = ['مدني', 'تجاري', 'إيجارات', 'تعويضات', 'قسمة وتصفية', 'إفلاس', 'أسرة / تركات', 'عمالي', 'ضرائب'];
+const DEFAULT_LAWSUIT_TYPES = ['استئناف', 'قضاء إداري', 'مدني', 'جنح'];
 const DEFAULT_PROCEDURE_TYPES = ['معاينة ميدانية', 'جلسة مناقشة خصوم', 'دراسة ملف وفحص مستندات', 'إيداع / تسليم التقرير', 'جلسة استكمال مناقشة', 'معاينة تكميلية'];
 const DEFAULT_APPOINTMENT_TYPES = [
-  'اجتماع عمل مع الخصوم',
-  'مقابلة أطراف وعملاء',
-  'موعد استشارة فنية هندسية',
+  'اجتماع عمل',
   'مهمة إدارية ومكتبية',
-  'جلسة صلح وتفاوض ودي',
-  'معاينة خاصة / ودية',
-  'مراجعة مصلحة الشهر العقاري',
   'موعد خارجي',
-  'موعد شخصي',
-  'أخرى'
+  'موعد شخصي'
 ];
+
+// Helper to get current year in Arabic/Eastern digits (e.g. ٢٠٢٦)
+function getCurrentYearArabic() {
+  const currentYear = new Date().getFullYear();
+  return String(currentYear).replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[d]);
+}
 
 function updateDatalists() {
   const lawsuitVal = localStorage.getItem('lawsuitTypes') || '';
@@ -473,6 +473,7 @@ function updateDatalists() {
   const lawsuitDatalist = document.getElementById('caseTypeList');
   const procedureDatalist = document.getElementById('procedureTypeList');
   const appointmentDatalist = document.getElementById('appointmentTypeList');
+  const courtDatalist = document.getElementById('courtList');
   
   if (lawsuitDatalist) {
     lawsuitDatalist.innerHTML = '';
@@ -500,6 +501,39 @@ function updateDatalists() {
       appointmentDatalist.appendChild(opt);
     });
   }
+
+  if (courtDatalist) {
+    courtDatalist.innerHTML = '';
+
+    // Collect all unique courts previously entered in cases/missions
+    const courtsFromCases = (state.allCases || [])
+      .filter(c => c.entryType === 'case' || !c.entryType)
+      .map(c => c.court && c.court.trim())
+      .filter(Boolean);
+
+    // Also get saved courts from localStorage
+    const savedCourtVal = localStorage.getItem('courtList') || '';
+    const savedCourts = savedCourtVal.split(',').map(s => s.trim()).filter(Boolean);
+
+    // Merge and deduplicate
+    const allCourts = [...new Set([...courtsFromCases, ...savedCourts])];
+
+    // If new courts were found in cases that aren't yet in localStorage, persist them
+    if (courtsFromCases.length > 0 && allCourts.length !== savedCourts.length) {
+      localStorage.setItem('courtList', allCourts.join(', '));
+    }
+
+    allCourts.forEach(item => {
+      const opt = document.createElement('option');
+      opt.value = item;
+      courtDatalist.appendChild(opt);
+    });
+
+    const courtTextarea = document.getElementById('settingsCourtList');
+    if (courtTextarea && document.activeElement !== courtTextarea) {
+      courtTextarea.value = allCourts.join(', ');
+    }
+  }
 }
 
 
@@ -519,6 +553,9 @@ const calendar = {
     // Bind navigation buttons
     document.getElementById('prevMonth').addEventListener('click', () => this.changeMonth(-1));
     document.getElementById('nextMonth').addEventListener('click', () => this.changeMonth(1));
+
+    // Bind swipe gestures (touch on mobile & drag on desktop)
+    this.bindSwipeNavigation();
   },
 
   // Helper to format date as YYYY-MM-DD locally without timezone shift
@@ -534,6 +571,111 @@ const calendar = {
     this.render();
   },
 
+  bindSwipeNavigation() {
+    const calendarCard = document.querySelector('.calendar-card');
+    if (!calendarCard) return;
+
+    let startX = 0;
+    let startY = 0;
+    let currentX = 0;
+    let currentY = 0;
+    let isTracking = false;
+    let suppressClick = false;
+
+    const minSwipeDistance = 45; // Minimum horizontal px to register a swipe
+    const maxPerpendicularDistance = 80; // Max vertical deviation
+
+    // Prevent day selection if a swipe/drag just occurred
+    calendarCard.addEventListener('click', (e) => {
+      if (suppressClick) {
+        e.stopPropagation();
+        e.preventDefault();
+        suppressClick = false;
+      }
+    }, true);
+
+    const onStart = (clientX, clientY) => {
+      startX = clientX;
+      startY = clientY;
+      currentX = clientX;
+      currentY = clientY;
+      isTracking = true;
+    };
+
+    const onMove = (clientX, clientY) => {
+      if (!isTracking) return;
+      currentX = clientX;
+      currentY = clientY;
+    };
+
+    const onEnd = () => {
+      if (!isTracking) return;
+      isTracking = false;
+
+      const diffX = currentX - startX;
+      const diffY = currentY - startY;
+
+      // Check if gesture is primarily horizontal and exceeds threshold
+      if (Math.abs(diffX) >= minSwipeDistance && 
+          Math.abs(diffY) <= maxPerpendicularDistance && 
+          Math.abs(diffX) > Math.abs(diffY) * 1.2) {
+        
+        // Suppress accidental day-cell clicks following a swipe
+        suppressClick = true;
+        setTimeout(() => { suppressClick = false; }, 300);
+
+        if (diffX < 0) {
+          // Swiped Left (finger moved right to left) -> Next Month (فوري بدون أنيميشن)
+          this.changeMonth(1);
+        } else {
+          // Swiped Right (finger moved left to right) -> Previous Month (فوري بدون أنيميشن)
+          this.changeMonth(-1);
+        }
+      }
+    };
+
+    // Touch Event Listeners for Mobile (Android WebView & iOS)
+    calendarCard.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        onStart(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: true });
+
+    calendarCard.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 1) {
+        onMove(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: true });
+
+    calendarCard.addEventListener('touchend', () => {
+      onEnd();
+    }, { passive: true });
+
+    calendarCard.addEventListener('touchcancel', () => {
+      isTracking = false;
+    }, { passive: true });
+
+    // Mouse Drag Listeners for Desktop / Browser Testing
+    let isMouseDown = false;
+    calendarCard.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('.nav-arrow')) return;
+      isMouseDown = true;
+      onStart(e.clientX, e.clientY);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isMouseDown) return;
+      onMove(e.clientX, e.clientY);
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!isMouseDown) return;
+      isMouseDown = false;
+      onEnd();
+    });
+  },
+
   async render() {
     const calendarMonthYear = document.getElementById('calendarMonthYear');
     const calendarDays = document.getElementById('calendarDays');
@@ -544,8 +686,8 @@ const calendar = {
     calendarMonthYear.textContent = `${this.monthsAr[month]} ${year}`;
     calendarDays.innerHTML = '';
     
-    // Get first day of month (0 = Sunday, 1 = Monday...)
-    const firstDayIndex = new Date(year, month, 1).getDay();
+    // Get first day of month aligned with week starting Saturday (0 = Saturday, 1 = Sunday, ..., 6 = Friday)
+    const firstDayIndex = (new Date(year, month, 1).getDay() + 1) % 7;
     // Get last date of current month
     const totalDays = new Date(year, month + 1, 0).getDate();
     // Get last date of previous month
@@ -553,6 +695,7 @@ const calendar = {
     
     // Fetch all cases in the background to set event dots
     state.allCases = await state.db.getAllCases();
+    updateDatalists();
     const eventDates = new Set(state.allCases.map(c => c.dateOnly));
     
     // Today's formatted date string for highlight
@@ -733,6 +876,7 @@ async function loadDailyAgenda() {
       const isAppointment = c.entryType === 'appointment';
       
       const card = document.createElement('div');
+      card.setAttribute('data-id', c.id);
       
       if (isAppointment) {
         // Render Appointment Card
@@ -931,11 +1075,106 @@ function setEntryType(type) {
   }
 }
 
+// ==========================================
+// SCROLL & MODAL NAVIGATION HELPERS
+// ==========================================
+function resetScrollLocks() {
+  try {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    const appCont = document.querySelector('.app-container');
+    if (appCont) appCont.scrollTop = 0;
+  } catch (e) {}
+}
+
+function closeTopmostModal() {
+  const confirmModal = document.getElementById('confirmModalOverlay');
+  if (confirmModal && confirmModal.classList.contains('active')) {
+    confirmModal.classList.remove('active');
+    pendingDeleteId = null;
+    return true;
+  }
+
+  const caseModal = document.getElementById('caseModalOverlay');
+  if (caseModal && caseModal.classList.contains('active')) {
+    hideAddEditModal();
+    return true;
+  }
+
+  const viewModal = document.getElementById('viewModalOverlay');
+  if (viewModal && viewModal.classList.contains('active')) {
+    hideViewModal();
+    return true;
+  }
+
+  const searchModal = document.getElementById('searchModalOverlay');
+  if (searchModal && searchModal.classList.contains('active')) {
+    if (typeof searchController !== 'undefined' && searchController.hide) {
+      searchController.hide();
+    } else {
+      searchModal.classList.remove('active');
+    }
+    return true;
+  }
+
+  const printModal = document.getElementById('printModalOverlay');
+  if (printModal && printModal.classList.contains('active')) {
+    if (typeof printManager !== 'undefined' && printManager.hide) {
+      printManager.hide();
+    } else {
+      printModal.classList.remove('active');
+    }
+    return true;
+  }
+
+  const appInfoModal = document.getElementById('appInfoModalOverlay');
+  if (appInfoModal && appInfoModal.classList.contains('active')) {
+    appInfoModal.classList.remove('active');
+    return true;
+  }
+
+  const settingsPanel = document.getElementById('settingsPanel');
+  const notifPanel = document.getElementById('notifPanel');
+  if ((settingsPanel && settingsPanel.classList.contains('active')) ||
+      (notifPanel && notifPanel.classList.contains('active'))) {
+    if (typeof reminderSystem !== 'undefined' && reminderSystem.closeAllSidebars) {
+      reminderSystem.closeAllSidebars();
+    }
+    return true;
+  }
+
+  return false;
+}
+
+window.handleAppBackButton = function() {
+  return closeTopmostModal();
+};
+
+let isHandlingPopState = false;
+
+function pushModalState(name) {
+  try {
+    history.pushState({ modalOpen: true, modalName: name }, '');
+  } catch (e) {}
+}
+
+window.addEventListener('popstate', (e) => {
+  if (isHandlingPopState) return;
+  isHandlingPopState = true;
+  closeTopmostModal();
+  setTimeout(() => { isHandlingPopState = false; }, 60);
+});
+
 // Show form modal for adding or editing
 async function showAddEditModal(caseId = null) {
   caseForm.reset();
+  updateDatalists();
   
+  const modalTitleEl = document.querySelector('#caseModalOverlay .modal-title span');
+
   if (caseId) {
+    if (modalTitleEl) modalTitleEl.textContent = 'تعديل بيانات مأمورية / موعد';
     // Editing existing item
     const matched = state.allCases.find(c => c.id === Number(caseId));
     if (matched) {
@@ -960,6 +1199,7 @@ async function showAddEditModal(caseId = null) {
       }
     }
   } else {
+    if (modalTitleEl) modalTitleEl.textContent = 'إضافة مأمورية أو موعد جديد';
     // Creating new item
     document.getElementById('caseId').value = '';
     // Preset entry type based on active filter if relevant, otherwise default to case
@@ -970,12 +1210,17 @@ async function showAddEditModal(caseId = null) {
     const selectedDateTimeStr = `${state.selectedDateStr}T09:00`;
     document.getElementById('dateTime').value = selectedDateTimeStr;
     const caseYearInput = document.getElementById('caseYear');
-    if (!caseYearInput.value) {
-      caseYearInput.value = new Date().getFullYear();
+    if (caseYearInput) {
+      caseYearInput.value = getCurrentYearArabic();
     }
   }
   
+  resetScrollLocks();
+  const sheet = caseModalOverlay.querySelector('.modal-sheet');
+  if (sheet) sheet.scrollTop = 0;
+
   caseModalOverlay.classList.add('active');
+  pushModalState('addEdit');
 }
 
 function hideAddEditModal() {
@@ -1016,6 +1261,14 @@ caseForm.addEventListener('submit', async (e) => {
       procedureDetails,
       procedure: procedureDetails // backwards compatibility
     };
+
+    if (court) {
+      const currentCourts = (localStorage.getItem('courtList') || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (!currentCourts.includes(court)) {
+        currentCourts.push(court);
+        localStorage.setItem('courtList', currentCourts.join(', '));
+      }
+    }
   } else {
     const title = document.getElementById('appointmentTitle').value.trim();
     const appointmentType = document.getElementById('appointmentType').value.trim();
@@ -1058,6 +1311,13 @@ function showViewModal(itemObj) {
   const titleEl = document.getElementById('viewModalTitle');
   const caseContainer = document.getElementById('viewCaseContainer');
   const apptContainer = document.getElementById('viewAppointmentContainer');
+  const followUpBtnText = document.getElementById('viewFollowUpBtnText');
+
+  if (followUpBtnText) {
+    followUpBtnText.textContent = isAppt 
+      ? 'موعد جديد' 
+      : 'موعد / إجراء جديد';
+  }
 
   const d = new Date(itemObj.dateTime);
   const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
@@ -1093,12 +1353,92 @@ function showViewModal(itemObj) {
     document.getElementById('viewCaseDateTime').textContent = formattedDateTime;
   }
   
+  resetScrollLocks();
+  const sheet = viewModalOverlay.querySelector('.modal-sheet');
+  if (sheet) sheet.scrollTop = 0;
+
   viewModalOverlay.classList.add('active');
+  pushModalState('view');
 }
 
 function hideViewModal() {
   viewModalOverlay.classList.remove('active');
   activeViewingCase = null;
+}
+
+// Duplicate existing case or appointment to schedule a new procedure without retyping
+function duplicateCaseForNewProcedure(sourceItem) {
+  if (!sourceItem) return;
+  
+  caseForm.reset();
+  updateDatalists();
+  
+  // Set caseId to EMPTY so this will save as a BRAND NEW record, never overwriting the old one!
+  document.getElementById('caseId').value = '';
+  
+  const type = sourceItem.entryType || 'case';
+  setEntryType(type);
+  
+  // Default date: active selected date or today at 10:00
+  const defaultDateStr = state.selectedDateStr || calendar.formatDateStr(new Date());
+  document.getElementById('dateTime').value = `${defaultDateStr}T10:00`;
+  
+  const modalTitleEl = document.querySelector('#caseModalOverlay .modal-title span');
+
+  if (type === 'case') {
+    // Copy all core case info
+    document.getElementById('caseNumber').value = sourceItem.caseNumber || '';
+    document.getElementById('caseYear').value = sourceItem.caseYear || '';
+    document.getElementById('court').value = sourceItem.court || '';
+    document.getElementById('caseType').value = sourceItem.caseType || '';
+    
+    // Procedure is left blank for the expert to specify the next action
+    document.getElementById('procedureType').value = '';
+    document.getElementById('procedureDetails').value = '';
+    
+    if (modalTitleEl) {
+      modalTitleEl.textContent = `إجراء جديد للقضية (${sourceItem.caseNumber || ''} / ${sourceItem.caseYear || ''})`;
+    }
+  } else {
+    // Copy appointment info
+    document.getElementById('appointmentTitle').value = sourceItem.title || '';
+    document.getElementById('appointmentType').value = sourceItem.appointmentType || '';
+    document.getElementById('appointmentLocation').value = sourceItem.location || '';
+    document.getElementById('appointmentNotes').value = '';
+    
+    if (modalTitleEl) {
+      modalTitleEl.textContent = `موعد جديد لنفس الموضوع: ${sourceItem.title || ''}`;
+    }
+  }
+  
+  resetScrollLocks();
+  const sheet = caseModalOverlay.querySelector('.modal-sheet');
+  if (sheet) sheet.scrollTop = 0;
+  
+  caseModalOverlay.classList.add('active');
+  pushModalState('addEdit');
+  
+  // Focus appropriate field
+  setTimeout(() => {
+    if (type === 'case') {
+      const pTypeInput = document.getElementById('procedureType');
+      if (pTypeInput) pTypeInput.focus();
+    } else {
+      const dtInput = document.getElementById('dateTime');
+      if (dtInput) dtInput.focus();
+    }
+  }, 350);
+}
+
+const viewFollowUpBtn = document.getElementById('viewFollowUpBtn');
+if (viewFollowUpBtn) {
+  viewFollowUpBtn.addEventListener('click', () => {
+    if (activeViewingCase) {
+      const source = activeViewingCase;
+      hideViewModal();
+      duplicateCaseForNewProcedure(source);
+    }
+  });
 }
 
 document.getElementById('viewEditBtn').addEventListener('click', () => {
@@ -1143,7 +1483,11 @@ function showAppInfoModal() {
       statusEl.style.display = 'none';
       statusEl.textContent = '';
     }
+    resetScrollLocks();
+    const sheet = appInfoModalOverlay.querySelector('.modal-sheet');
+    if (sheet) sheet.scrollTop = 0;
     appInfoModalOverlay.classList.add('active');
+    pushModalState('appInfo');
   }
 }
 
@@ -1177,6 +1521,7 @@ async function exportAlertsData() {
         lawsuitTypes,
         procedureTypes,
         appointmentTypes,
+        courtList: localStorage.getItem('courtList') || '',
         notificationsEnabled
       }
     };
@@ -1262,6 +1607,9 @@ async function importAlertsData(file) {
         if (data.settings.appointmentTypes) {
           localStorage.setItem('appointmentTypes', data.settings.appointmentTypes);
         }
+        if (data.settings.courtList) {
+          localStorage.setItem('courtList', data.settings.courtList);
+        }
         updateDatalists();
       }
 
@@ -1316,7 +1664,7 @@ if (appInfoBtn) appInfoBtn.addEventListener('click', showAppInfoModal);
 const sidebarAppInfoBtn = document.getElementById('sidebarAppInfoBtn');
 if (sidebarAppInfoBtn) {
   sidebarAppInfoBtn.addEventListener('click', () => {
-    reminderSystem.toggleSidebar(false);
+    reminderSystem.closeAllSidebars();
     showAppInfoModal();
   });
 }
@@ -1375,29 +1723,50 @@ const reminderSystem = {
       }
     });
 
-    document.getElementById('settingsBtn').addEventListener('click', () => this.toggleSidebar(true));
-    document.getElementById('notifBellBtn').addEventListener('click', () => this.toggleSidebar(true));
-    document.getElementById('closeSidebar').addEventListener('click', () => this.toggleSidebar(false));
-    document.getElementById('sidebarOverlay').addEventListener('click', () => this.toggleSidebar(false));
+    const settingsBtn = document.getElementById('settingsBtn');
+    if (settingsBtn) settingsBtn.addEventListener('click', () => this.toggleSettings(true));
+
+    const notifBellBtn = document.getElementById('notifBellBtn');
+    if (notifBellBtn) notifBellBtn.addEventListener('click', () => this.toggleNotifs(true));
+
+    const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+    if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', () => this.toggleSettings(false));
+
+    const closeNotifBtn = document.getElementById('closeNotifBtn');
+    if (closeNotifBtn) closeNotifBtn.addEventListener('click', () => this.toggleNotifs(false));
+
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+    if (sidebarOverlay) sidebarOverlay.addEventListener('click', () => this.closeAllSidebars());
+
+    const clearNotifBtn = document.getElementById('clearNotifHistoryBtn');
+    if (clearNotifBtn) {
+      clearNotifBtn.addEventListener('click', () => {
+        localStorage.removeItem('notificationHistory');
+        this.renderHistory();
+      });
+    }
     
     document.getElementById('bannerClose').addEventListener('click', () => {
       notificationBanner.classList.remove('visible');
     });
 
     // Setup LocalStorage settings for datalist options
-    if (!localStorage.getItem('lawsuitTypes')) {
+    const savedLawsuitTypes = localStorage.getItem('lawsuitTypes');
+    if (!savedLawsuitTypes || savedLawsuitTypes.includes('تجاري') || savedLawsuitTypes.includes('قسمة وتصفية')) {
       localStorage.setItem('lawsuitTypes', DEFAULT_LAWSUIT_TYPES.join(', '));
     }
     if (!localStorage.getItem('procedureTypes')) {
       localStorage.setItem('procedureTypes', DEFAULT_PROCEDURE_TYPES.join(', '));
     }
-    if (!localStorage.getItem('appointmentTypes')) {
+    const savedApptTypes = localStorage.getItem('appointmentTypes');
+    if (!savedApptTypes || savedApptTypes.includes('اجتماع عمل مع الخصوم') || savedApptTypes.includes('استشارة فنية')) {
       localStorage.setItem('appointmentTypes', DEFAULT_APPOINTMENT_TYPES.join(', '));
     }
     
     const lawsuitTextarea = document.getElementById('settingsLawsuitTypes');
     const procedureTextarea = document.getElementById('settingsProcedureTypes');
     const appointmentTextarea = document.getElementById('settingsAppointmentTypes');
+    const courtTextarea = document.getElementById('settingsCourtList');
     
     if (lawsuitTextarea && procedureTextarea) {
       lawsuitTextarea.value = localStorage.getItem('lawsuitTypes');
@@ -1423,22 +1792,67 @@ const reminderSystem = {
       });
     }
 
+    if (courtTextarea) {
+      courtTextarea.value = localStorage.getItem('courtList') || '';
+      courtTextarea.addEventListener('input', (e) => {
+        localStorage.setItem('courtList', e.target.value);
+        updateDatalists();
+      });
+    }
+
     updateDatalists();
     this.renderHistory();
   },
 
-  toggleSidebar(show) {
-    const sidebar = document.getElementById('sidebarPanel');
+  toggleSettings(show) {
+    const settingsPanel = document.getElementById('settingsPanel');
+    const notifPanel = document.getElementById('notifPanel');
     const overlay = document.getElementById('sidebarOverlay');
     if (show) {
-      sidebar.classList.add('active');
-      overlay.classList.add('active');
-      document.getElementById('notifBadge').classList.remove('visible');
-      this.renderHistory();
+      if (notifPanel) notifPanel.classList.remove('active');
+      if (settingsPanel) settingsPanel.classList.add('active');
+      if (overlay) overlay.classList.add('active');
+      pushModalState('settings');
     } else {
-      sidebar.classList.remove('active');
-      overlay.classList.remove('active');
+      if (settingsPanel) settingsPanel.classList.remove('active');
+      if (overlay && (!notifPanel || !notifPanel.classList.contains('active'))) {
+        overlay.classList.remove('active');
+      }
     }
+  },
+
+  toggleNotifs(show) {
+    const settingsPanel = document.getElementById('settingsPanel');
+    const notifPanel = document.getElementById('notifPanel');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (show) {
+      if (settingsPanel) settingsPanel.classList.remove('active');
+      if (notifPanel) notifPanel.classList.add('active');
+      if (overlay) overlay.classList.add('active');
+      const badge = document.getElementById('notifBadge');
+      if (badge) badge.classList.remove('visible');
+      this.renderHistory();
+      pushModalState('notifications');
+    } else {
+      if (notifPanel) notifPanel.classList.remove('active');
+      if (overlay && (!settingsPanel || !settingsPanel.classList.contains('active'))) {
+        overlay.classList.remove('active');
+      }
+    }
+  },
+
+  closeAllSidebars() {
+    const settingsPanel = document.getElementById('settingsPanel');
+    const notifPanel = document.getElementById('notifPanel');
+    const overlay = document.getElementById('sidebarOverlay');
+    if (settingsPanel) settingsPanel.classList.remove('active');
+    if (notifPanel) notifPanel.classList.remove('active');
+    if (overlay) overlay.classList.remove('active');
+  },
+
+  toggleSidebar(show) {
+    if (show) this.toggleSettings(true);
+    else this.closeAllSidebars();
   },
 
   async requestPermission() {
@@ -1597,7 +2011,835 @@ const reminderSystem = {
 };
 
 // ==========================================
-// 5. APPLICATION INITIALIZATION
+// 4. COMPREHENSIVE SEARCH CONTROLLER
+// ==========================================
+const searchController = {
+  currentFilter: 'all',
+  lastQuery: '',
+  debounceTimer: null,
+
+  init() {
+    const searchBtn = document.getElementById('searchBtn');
+    const searchModalOverlay = document.getElementById('searchModalOverlay');
+    const searchCloseBtn = document.getElementById('searchCloseBtn');
+    const searchInput = document.getElementById('searchInput');
+    const searchClearBtn = document.getElementById('searchClearBtn');
+    const searchFilterPills = document.querySelectorAll('#searchFilterPills .search-pill');
+
+    if (searchBtn) {
+      searchBtn.addEventListener('click', () => this.show());
+    }
+
+    if (searchCloseBtn) {
+      searchCloseBtn.addEventListener('click', () => this.hide());
+    }
+
+    if (searchModalOverlay) {
+      searchModalOverlay.addEventListener('click', (e) => {
+        if (e.target === searchModalOverlay) this.hide();
+      });
+    }
+
+    // Clear Button
+    if (searchClearBtn) {
+      searchClearBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        searchClearBtn.style.display = 'none';
+        searchInput.focus();
+        this.runSearch('');
+      });
+    }
+
+    // Input Typing Handler with Debounce
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+        searchClearBtn.style.display = query ? 'flex' : 'none';
+        clearTimeout(this.debounceTimer);
+        this.debounceTimer = setTimeout(() => {
+          this.runSearch(query);
+        }, 120);
+      });
+    }
+
+    // Quick Filter Pills
+    searchFilterPills.forEach(pill => {
+      pill.addEventListener('click', () => {
+        searchFilterPills.forEach(p => p.classList.remove('active'));
+        pill.classList.add('active');
+        this.currentFilter = pill.dataset.filter || 'all';
+        this.runSearch(searchInput ? searchInput.value.trim() : '');
+      });
+    });
+
+    // ESC Key Support
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && searchModalOverlay && searchModalOverlay.classList.contains('active')) {
+        this.hide();
+      }
+    });
+  },
+
+  async show() {
+    const searchModalOverlay = document.getElementById('searchModalOverlay');
+    const searchInput = document.getElementById('searchInput');
+    if (!searchModalOverlay) return;
+
+    resetScrollLocks();
+    const sheet = searchModalOverlay.querySelector('.search-modal-sheet');
+    if (sheet) sheet.scrollTop = 0;
+
+    searchModalOverlay.classList.add('active');
+    pushModalState('search');
+    
+    // Ensure all cases are loaded
+    state.allCases = await state.db.getAllCases();
+
+    if (searchInput) {
+      searchInput.value = '';
+      const clearBtn = document.getElementById('searchClearBtn');
+      if (clearBtn) clearBtn.style.display = 'none';
+      // Wait for modal slide-up animation (300ms) to finish cleanly
+      setTimeout(() => {
+        if (searchInput && searchModalOverlay.classList.contains('active')) {
+          try {
+            if (window.innerWidth > 600) {
+              searchInput.focus();
+            }
+          } catch (e) {}
+        }
+      }, 350);
+    }
+
+    this.runSearch('');
+  },
+
+  hide() {
+    const searchModalOverlay = document.getElementById('searchModalOverlay');
+    if (searchModalOverlay) searchModalOverlay.classList.remove('active');
+  },
+
+  // Arabic normalizer for search matching
+  normalize(str) {
+    if (!str) return '';
+    return String(str)
+      .toLowerCase()
+      .replace(/[أإآ]/g, 'ا')
+      .replace(/[ة]/g, 'ه')
+      .replace(/[ى]/g, 'ي')
+      .replace(/[\u064B-\u065F]/g, '') // remove Arabic diacritics
+      .replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)) // convert Indic digits
+      .trim();
+  },
+
+  async runSearch(query) {
+    this.lastQuery = query;
+    const resultsContainer = document.getElementById('searchResultsList');
+    const resultsMeta = document.getElementById('searchResultsMeta');
+    const countText = document.getElementById('searchResultsCountText');
+    if (!resultsContainer) return;
+
+    // Refresh allCases
+    if (!state.allCases || state.allCases.length === 0) {
+      state.allCases = await state.db.getAllCases();
+    }
+
+    const todayStr = calendar.formatDateStr(new Date());
+    const normQuery = this.normalize(query);
+
+    // Filter items based on query
+    let matched = state.allCases.filter(c => {
+      if (!normQuery) return true; // Show all if query is empty
+
+      const fieldsToSearch = [
+        c.caseNumber,
+        c.caseYear,
+        c.caseType,
+        c.court,
+        c.procedureType,
+        c.procedureDetails,
+        c.procedure,
+        c.parties,
+        c.title,
+        c.appointmentType,
+        c.location,
+        c.notes,
+        c.dateOnly
+      ];
+
+      return fieldsToSearch.some(field => {
+        if (!field) return false;
+        return this.normalize(field).includes(normQuery);
+      });
+    });
+
+    // Update filter counts based on matched items
+    const countAll = matched.length;
+    const countUpcoming = matched.filter(c => c.dateOnly >= todayStr).length;
+    const countCases = matched.filter(c => c.entryType === 'case').length;
+    const countAppts = matched.filter(c => c.entryType === 'appointment').length;
+
+    const elCountAll = document.getElementById('searchCountAll');
+    const elCountUpcoming = document.getElementById('searchCountUpcoming');
+    const elCountCases = document.getElementById('searchCountCases');
+    const elCountAppts = document.getElementById('searchCountAppts');
+
+    if (elCountAll) elCountAll.textContent = countAll;
+    if (elCountUpcoming) elCountUpcoming.textContent = countUpcoming;
+    if (elCountCases) elCountCases.textContent = countCases;
+    if (elCountAppts) elCountAppts.textContent = countAppts;
+
+    // Apply active quick filter pill
+    if (this.currentFilter === 'upcoming') {
+      matched = matched.filter(c => c.dateOnly >= todayStr);
+    } else if (this.currentFilter === 'case') {
+      matched = matched.filter(c => c.entryType === 'case');
+    } else if (this.currentFilter === 'appointment') {
+      matched = matched.filter(c => c.entryType === 'appointment');
+    }
+
+    // Sort items:
+    // Future/today items first sorted ascending by date/time, then past items sorted descending
+    matched.sort((a, b) => {
+      const aIsFuture = a.dateOnly >= todayStr;
+      const bIsFuture = b.dateOnly >= todayStr;
+      if (aIsFuture && !bIsFuture) return -1;
+      if (!aIsFuture && bIsFuture) return 1;
+      if (aIsFuture && bIsFuture) {
+        return (a.dateTime || a.dateOnly).localeCompare(b.dateTime || b.dateOnly);
+      }
+      return (b.dateTime || b.dateOnly).localeCompare(a.dateTime || a.dateOnly);
+    });
+
+    // Render results
+    resultsContainer.innerHTML = '';
+
+    if (matched.length === 0) {
+      if (resultsMeta) resultsMeta.style.display = 'none';
+      resultsContainer.innerHTML = `
+        <div class="empty-state" style="padding: 40px 20px; border-radius: 16px;">
+          <i class="fa-solid fa-magnifying-glass-chart" style="font-size: 2.2rem; color: var(--text-muted); margin-bottom: 12px;"></i>
+          <h4 style="font-size: 0.95rem; color: var(--text-primary); margin-bottom: 6px;">لا توجد نتائج مطابقة</h4>
+          <p style="font-size: 0.78rem; color: var(--text-muted); max-width: 280px; margin: 0 auto;">
+            ${normQuery ? `لم يتم العثور على أي مأموريات أو مواعيد تطابق "${query}"` : 'لا توجد مواعيد مسجلة في الأجندة حالياً'}
+          </p>
+        </div>
+      `;
+      return;
+    }
+
+    if (resultsMeta && countText) {
+      resultsMeta.style.display = 'flex';
+      countText.textContent = normQuery 
+        ? `وجدت ${matched.length} نتيجة مطابقة لـ "${query}"`
+        : `إجمالي المسجل بالأجندة: ${matched.length} مأمورية وموعد`;
+    }
+
+    matched.forEach(item => {
+      const isCase = item.entryType === 'case';
+      const isToday = item.dateOnly === todayStr;
+      const isUpcoming = item.dateOnly > todayStr;
+      const timeStr = formatArabicTime(item.dateTime);
+
+      // Status badge
+      let statusBadgeHtml = '';
+      if (isToday) {
+        statusBadgeHtml = `<span class="search-status-badge today"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> اليوم</span>`;
+      } else if (isUpcoming) {
+        statusBadgeHtml = `<span class="search-status-badge upcoming"><i class="fa-solid fa-circle" style="font-size: 5px;"></i> قادم</span>`;
+      } else {
+        statusBadgeHtml = `<span class="search-status-badge past">منتهي</span>`;
+      }
+
+      // Format date in Arabic safely without timezone shift
+      let arabicDateStr = item.dateOnly;
+      try {
+        const parts = (item.dateOnly || '').split('-');
+        if (parts.length === 3) {
+          const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+          const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+          arabicDateStr = new Intl.DateTimeFormat('ar-EG', options).format(d);
+        }
+      } catch (err) {}
+
+      // Card Element
+      const card = document.createElement('div');
+      card.className = `search-result-card ${isCase ? 'is-case' : 'is-appointment'}`;
+
+      if (isCase) {
+        const caseNumHtml = this.highlight(item.caseNumber || '', query);
+        const caseYearHtml = this.highlight(item.caseYear || '', query);
+        const courtHtml = this.highlight(item.court || '', query);
+        const pTypeHtml = this.highlight(item.procedureType || 'إجراء مطلوب', query);
+        const pDetailsHtml = this.highlight(item.procedureDetails || item.procedure || '', query);
+        const caseTypeHtml = this.highlight(item.caseType || '', query);
+
+        card.innerHTML = `
+          <div class="search-card-header">
+            <div class="search-card-title">
+              <i class="fa-solid fa-gavel" style="color: var(--accent-gold);"></i>
+              <span>ملف: ${caseNumHtml} / ${caseYearHtml}</span>
+            </div>
+            <div class="search-card-tags">
+              <span class="search-badge case">${caseTypeHtml}</span>
+              ${statusBadgeHtml}
+            </div>
+          </div>
+
+          <div class="search-card-details">
+            <div class="search-detail-row">
+              <i class="fa-solid fa-landmark"></i>
+              <span>${courtHtml}</span>
+            </div>
+            <div class="search-detail-row">
+              <i class="fa-solid fa-list-check"></i>
+              <span><b>${pTypeHtml}</b> ${pDetailsHtml ? '• ' + pDetailsHtml : ''}</span>
+            </div>
+          </div>
+
+          <div class="search-card-footer">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <i class="fa-regular fa-calendar"></i>
+              <span>${arabicDateStr} • ${timeStr}</span>
+            </div>
+            <span class="search-go-action">
+              <span>عرض بالأجندة</span>
+              <i class="fa-solid fa-arrow-left"></i>
+            </span>
+          </div>
+        `;
+      } else {
+        const titleHtml = this.highlight(item.title || '', query);
+        const apptTypeHtml = this.highlight(item.appointmentType || 'موعد عام', query);
+        const locationHtml = this.highlight(item.location || '', query);
+        const notesHtml = this.highlight(item.notes || '', query);
+
+        card.innerHTML = `
+          <div class="search-card-header">
+            <div class="search-card-title">
+              <i class="fa-solid fa-calendar-check" style="color: #38bdf8;"></i>
+              <span>${titleHtml}</span>
+            </div>
+            <div class="search-card-tags">
+              <span class="search-badge appt">${apptTypeHtml}</span>
+              ${statusBadgeHtml}
+            </div>
+          </div>
+
+          <div class="search-card-details">
+            ${item.location ? `
+              <div class="search-detail-row">
+                <i class="fa-solid fa-location-dot" style="color: #38bdf8;"></i>
+                <span>${locationHtml}</span>
+              </div>
+            ` : ''}
+            ${item.notes ? `
+              <div class="search-detail-row">
+                <i class="fa-solid fa-note-sticky" style="color: #38bdf8;"></i>
+                <span>${notesHtml}</span>
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="search-card-footer">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <i class="fa-regular fa-calendar"></i>
+              <span>${arabicDateStr} • ${timeStr}</span>
+            </div>
+            <span class="search-go-action">
+              <span>عرض بالأجندة</span>
+              <i class="fa-solid fa-arrow-left"></i>
+            </span>
+          </div>
+        `;
+      }
+
+      // Click card to navigate to this appointment in calendar & agenda
+      card.addEventListener('click', () => {
+        this.navigateToItem(item);
+      });
+
+      resultsContainer.appendChild(card);
+    });
+  },
+
+  highlight(text, query) {
+    if (!text) return '';
+    if (!query) return String(text);
+    const normText = this.normalize(text);
+    const normQuery = this.normalize(query);
+    const idx = normText.indexOf(normQuery);
+    if (idx === -1) return String(text);
+
+    const originalMatch = String(text).substr(idx, query.length);
+    const before = String(text).substr(0, idx);
+    const after = String(text).substr(idx + query.length);
+    return `${before}<span class="search-highlight">${originalMatch}</span>${after}`;
+  },
+
+  async navigateToItem(item) {
+    this.hide();
+
+    // 1. Parse date of item
+    const parts = item.dateOnly.split('-').map(Number);
+    const targetYear = parts[0];
+    const targetMonthIndex = parts[1] - 1; // 0-based
+
+    // 2. Switch calendar month if different from current
+    state.currentDate.setFullYear(targetYear);
+    state.currentDate.setMonth(targetMonthIndex);
+
+    // 3. Set selected date
+    state.selectedDateStr = item.dateOnly;
+
+    // 4. Render calendar to display the target month & day cell
+    await calendar.render();
+
+    // 5. Update agenda title & reload daily list
+    updateAgendaTitle(item.dateOnly);
+    await loadDailyAgenda();
+
+    // 6. Scroll smoothly INSIDE <main> container to the agenda section and pulse the target card
+    setTimeout(() => {
+      resetScrollLocks();
+      const mainEl = document.querySelector('main');
+      const targetCard = document.querySelector(`.case-card[data-id="${item.id}"]`);
+      if (mainEl && targetCard) {
+        const mainRect = mainEl.getBoundingClientRect();
+        const cardRect = targetCard.getBoundingClientRect();
+        const targetScroll = (cardRect.top - mainRect.top) + mainEl.scrollTop - (mainEl.clientHeight / 2) + (cardRect.height / 2);
+        mainEl.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+        targetCard.classList.add('pulse-highlight');
+        setTimeout(() => {
+          targetCard.classList.remove('pulse-highlight');
+        }, 2500);
+      } else if (mainEl) {
+        const agendaSection = document.querySelector('.agenda-section');
+        if (agendaSection) {
+          mainEl.scrollTo({ top: Math.max(0, agendaSection.offsetTop - 15), behavior: 'smooth' });
+        }
+      }
+      resetScrollLocks();
+    }, 280);
+  }
+};
+
+// ==========================================
+// 5. PRINT & REPORT EXPORT CONTROLLER
+// ==========================================
+const printManager = {
+  activePreset: 'month',
+  activeType: 'both', // 'both' | 'case' | 'appointment'
+
+  init() {
+    const openPrintModalBtn = document.getElementById('openPrintModalBtn');
+    const printModalOverlay = document.getElementById('printModalOverlay');
+    const closePrintModalBtn = document.getElementById('closePrintModalBtn');
+    const cancelPrintBtn = document.getElementById('cancelPrintBtn');
+    const executePrintBtn = document.getElementById('executePrintBtn');
+    const printStartDate = document.getElementById('printStartDate');
+    const printEndDate = document.getElementById('printEndDate');
+    const presetButtons = document.querySelectorAll('#printPresetButtons .preset-btn');
+    const typeCards = document.querySelectorAll('#printTypeSelector .print-type-card');
+    const togglePrintPreviewBtn = document.getElementById('togglePrintPreviewBtn');
+
+    if (openPrintModalBtn) {
+      openPrintModalBtn.addEventListener('click', () => this.openModal('month'));
+    }
+
+    if (closePrintModalBtn) {
+      closePrintModalBtn.addEventListener('click', () => this.closeModal());
+    }
+
+    if (cancelPrintBtn) {
+      cancelPrintBtn.addEventListener('click', () => this.closeModal());
+    }
+
+    if (printModalOverlay) {
+      printModalOverlay.addEventListener('click', (e) => {
+        if (e.target === printModalOverlay) this.closeModal();
+      });
+    }
+
+    // Preset buttons
+    presetButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        presetButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.activePreset = btn.dataset.preset;
+        this.applyPreset(this.activePreset);
+        this.updatePreview();
+      });
+    });
+
+    // Date inputs change
+    if (printStartDate && printEndDate) {
+      printStartDate.addEventListener('change', () => {
+        presetButtons.forEach(b => b.classList.remove('active'));
+        this.updatePreview();
+      });
+      printEndDate.addEventListener('change', () => {
+        presetButtons.forEach(b => b.classList.remove('active'));
+        this.updatePreview();
+      });
+    }
+
+    // Type cards radio selection
+    typeCards.forEach(card => {
+      card.addEventListener('click', () => {
+        typeCards.forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        const radio = card.querySelector('input[type="radio"]');
+        if (radio) {
+          radio.checked = true;
+          this.activeType = radio.value;
+        }
+        this.updatePreview();
+      });
+    });
+
+    // Preview accordion toggle
+    if (togglePrintPreviewBtn) {
+      togglePrintPreviewBtn.addEventListener('click', () => {
+        const body = document.getElementById('printPreviewBody');
+        const chevron = document.getElementById('previewChevron');
+        if (body.style.display === 'none' || !body.style.display) {
+          body.style.display = 'block';
+          togglePrintPreviewBtn.classList.add('open');
+          if (chevron) chevron.style.transform = 'rotate(180deg)';
+        } else {
+          body.style.display = 'none';
+          togglePrintPreviewBtn.classList.remove('open');
+          if (chevron) chevron.style.transform = 'rotate(0deg)';
+        }
+      });
+    }
+
+    // Execute Print Button
+    if (executePrintBtn) {
+      executePrintBtn.addEventListener('click', () => this.executePrint());
+    }
+  },
+
+  async openModal(preset = 'month') {
+    const modal = document.getElementById('printModalOverlay');
+    if (!modal) return;
+
+    resetScrollLocks();
+    const sheet = modal.querySelector('.modal-sheet');
+    if (sheet) sheet.scrollTop = 0;
+
+    modal.classList.add('active');
+    pushModalState('print');
+    state.allCases = await state.db.getAllCases();
+
+    // Default preset
+    const presetButtons = document.querySelectorAll('#printPresetButtons .preset-btn');
+    presetButtons.forEach(b => {
+      if (b.dataset.preset === preset) b.classList.add('active');
+      else b.classList.remove('active');
+    });
+
+    this.applyPreset(preset);
+    this.updatePreview();
+  },
+
+  closeModal() {
+    const modal = document.getElementById('printModalOverlay');
+    if (modal) modal.classList.remove('active');
+  },
+
+  hide() {
+    this.closeModal();
+  },
+
+  applyPreset(preset) {
+    const printStartDate = document.getElementById('printStartDate');
+    const printEndDate = document.getElementById('printEndDate');
+    if (!printStartDate || !printEndDate) return;
+
+    const baseDate = state.selectedDateStr ? new Date(state.selectedDateStr) : new Date();
+    const year = baseDate.getFullYear();
+    const month = baseDate.getMonth(); // 0-based
+
+    let start = '';
+    let end = '';
+
+    if (preset === 'today') {
+      const today = state.selectedDateStr || calendar.formatDateStr(new Date());
+      start = today;
+      end = today;
+    } else if (preset === 'week') {
+      const d = new Date(baseDate);
+      const dayOfWeek = d.getDay(); // 0 = Sunday, ..., 6 = Saturday
+      // Week starts Saturday and ends Friday
+      const diffToSat = (dayOfWeek + 1) % 7;
+      const satDate = new Date(d);
+      satDate.setDate(d.getDate() - diffToSat);
+      const friDate = new Date(satDate);
+      friDate.setDate(satDate.getDate() + 6); // Friday
+      start = calendar.formatDateStr(satDate);
+      end = calendar.formatDateStr(friDate);
+    } else if (preset === 'month') {
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
+      start = calendar.formatDateStr(firstDay);
+      end = calendar.formatDateStr(lastDay);
+    } else if (preset === 'nextMonth') {
+      const firstDay = new Date(year, month + 1, 1);
+      const lastDay = new Date(year, month + 2, 0);
+      start = calendar.formatDateStr(firstDay);
+      end = calendar.formatDateStr(lastDay);
+    } else if (preset === 'all') {
+      if (state.allCases.length > 0) {
+        const sorted = [...state.allCases].sort((a, b) => a.dateOnly.localeCompare(b.dateOnly));
+        start = sorted[0].dateOnly;
+        end = sorted[sorted.length - 1].dateOnly;
+      } else {
+        const today = calendar.formatDateStr(new Date());
+        start = today;
+        end = today;
+      }
+    }
+
+    printStartDate.value = start;
+    printEndDate.value = end;
+  },
+
+  getFilteredItems() {
+    const startDate = document.getElementById('printStartDate')?.value;
+    const endDate = document.getElementById('printEndDate')?.value;
+    if (!startDate || !endDate) return [];
+
+    return state.allCases.filter(c => {
+      // Date range check
+      if (c.dateOnly < startDate || c.dateOnly > endDate) return false;
+
+      // Type check
+      if (this.activeType === 'case' && c.entryType !== 'case') return false;
+      if (this.activeType === 'appointment' && c.entryType !== 'appointment') return false;
+
+      return true;
+    }).sort((a, b) => {
+      return (a.dateTime || a.dateOnly).localeCompare(b.dateTime || b.dateOnly);
+    });
+  },
+
+  updatePreview() {
+    const items = this.getFilteredItems();
+    const summaryText = document.getElementById('printSummaryText');
+    const previewContent = document.getElementById('printPreviewContent');
+
+    const startDate = document.getElementById('printStartDate')?.value || '';
+    const endDate = document.getElementById('printEndDate')?.value || '';
+
+    const caseCount = items.filter(c => c.entryType === 'case').length;
+    const apptCount = items.filter(c => c.entryType === 'appointment').length;
+
+    if (summaryText) {
+      if (items.length === 0) {
+        summaryText.innerHTML = `لا توجد أي مأموريات أو مواعيد مسجلة في الفترة المحددة (${startDate} إلى ${endDate})`;
+        summaryText.style.color = '#f87171';
+      } else {
+        summaryText.innerHTML = `تم حصر <b>${items.length}</b> بند في الفترة المحددة (<b>${caseCount}</b> مأمورية قضائية • <b>${apptCount}</b> موعد آخر)`;
+        summaryText.style.color = '#a7f3d0';
+      }
+    }
+
+    if (previewContent) {
+      previewContent.innerHTML = this.generateReportHtml(items, startDate, endDate, true);
+    }
+  },
+
+  generateReportHtml(items, startDate, endDate, isPreview = false) {
+    const caseCount = items.filter(c => c.entryType === 'case').length;
+    const apptCount = items.filter(c => c.entryType === 'appointment').length;
+
+    let typeScopeText = 'جميع المأموريات القضائية والمواعيد الأخرى';
+    if (this.activeType === 'case') typeScopeText = 'المأموريات القضائية فقط';
+    if (this.activeType === 'appointment') typeScopeText = 'المواعيد والمهام الأخرى فقط';
+
+    // Format Arabic dates safely without timezone shifting
+    const formatAr = (dateStr) => {
+      if (!dateStr) return '';
+      try {
+        const parts = dateStr.split('-');
+        if (parts.length === 3) {
+          const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+          return new Intl.DateTimeFormat('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(d);
+        }
+        return dateStr;
+      } catch (e) {
+        return dateStr;
+      }
+    };
+
+    const todayAr = new Intl.DateTimeFormat('ar-EG', { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }).format(new Date());
+
+    let rowsHtml = '';
+    if (items.length === 0) {
+      rowsHtml = `
+        <tr>
+          <td colspan="6" style="text-align: center; padding: 25px; color: #64748b; font-weight: bold;">
+            لا توجد أي مأموريات أو مواعيد مسجلة في هذه الفترة
+          </td>
+        </tr>
+      `;
+    } else {
+      // Group items by date while preserving chronological order
+      const dateGroups = [];
+      let currentGroup = null;
+
+      items.forEach((item) => {
+        const dateKey = item.dateOnly || (item.dateTime ? item.dateTime.substring(0, 10) : '');
+        if (!currentGroup || currentGroup.dateKey !== dateKey) {
+          currentGroup = {
+            dateKey: dateKey,
+            items: []
+          };
+          dateGroups.push(currentGroup);
+        }
+        currentGroup.items.push(item);
+      });
+
+      let seqIndex = 1;
+      dateGroups.forEach(group => {
+        const groupLen = group.items.length;
+        const dateFormatted = formatAr(group.dateKey);
+
+        group.items.forEach((item, idxInGroup) => {
+          const isCase = item.entryType === 'case';
+          const timeFormatted = formatArabicTime(item.dateTime);
+
+          const titleOrCase = isCase 
+            ? `<b>ملف: ${item.caseNumber || '—'} / ${item.caseYear || ''}</b><div style="font-size: 8pt; color: #475569;">${item.caseType || ''}</div>`
+            : `<b>${item.title || 'موعد عام'}</b><div style="font-size: 8pt; color: #475569;">${item.appointmentType || ''}</div>`;
+
+          const courtOrLoc = isCase
+            ? `<b>${item.court || '—'}</b>`
+            : `${item.location || '—'}`;
+
+          const procOrNotes = isCase
+            ? `<b>${item.procedureType || ''}</b>${item.procedureDetails || item.procedure ? `<div>${item.procedureDetails || item.procedure}</div>` : ''}`
+            : `${item.notes || '—'}`;
+
+          const dateCellHtml = idxInGroup === 0 
+            ? `<td class="text-center group-date-cell" rowspan="${groupLen}"><b>${dateFormatted}</b></td>`
+            : '';
+
+          rowsHtml += `
+            <tr>
+              <td class="text-center" style="font-weight: bold;">${seqIndex++}</td>
+              ${dateCellHtml}
+              <td class="text-center" style="direction: ltr; font-weight: 600;">${timeFormatted}</td>
+              <td>${titleOrCase}</td>
+              <td>${courtOrLoc}</td>
+              <td>${procOrNotes}</td>
+            </tr>
+          `;
+        });
+      });
+    }
+
+    return `
+      <div class="report-document">
+        <div class="print-official-header">
+          <div class="header-gov-block">
+            <h3>جمهورية مصر العربية</h3>
+            <p>وزارة العـــــــــــــدل</p>
+            <p>قطاع خبراء وزارة العدل</p>
+          </div>
+
+          <div class="header-title-block">
+            <div class="header-emblem">⚖️</div>
+            <h2>جدول أعمال الخبير القضائي</h2>
+            <div class="report-period-text">
+              الفترة من: <b>${startDate}</b> إلى: <b>${endDate}</b>
+            </div>
+            <div class="report-scope-tag">${typeScopeText}</div>
+          </div>
+
+          <div class="header-meta-block">
+            <p><b>الخبير:</b> د. م. عمرو مصطفي حامد</p>
+            <p><b>الصفة:</b> خبير هندسي بوزارة العدل</p>
+            <p><b>تاريخ الاستخراج:</b> ${todayAr}</p>
+          </div>
+        </div>
+
+        <div class="report-summary-bar">
+          <span>إجمالي البنود المقيدة: <b>${items.length}</b></span>
+          <span>المأموريات القضائية: <b>${caseCount}</b></span>
+          <span>المواعيد والمهام الأخرى: <b>${apptCount}</b></span>
+        </div>
+
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th style="width: 5%;">م</th>
+              <th style="width: 20%;">اليوم والتاريخ</th>
+              <th style="width: 10%;">الوقت</th>
+              <th style="width: 25%;">رقم الملف / الموضوع</th>
+              <th style="width: 18%;">المحكمة / الجهة</th>
+              <th style="width: 22%;">الإجراء والملاحظات</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+
+        ${!isPreview ? `
+          <div class="report-footer-section">
+            <div class="sign-box">
+              <p><b>توقيع الخبير القضائي</b></p>
+              <p class="sign-dots">................................................</p>
+            </div>
+            <div class="sign-box">
+              <p><b>خاتم المكتب / الاعتماد</b></p>
+              <p class="sign-dots">................................................</p>
+            </div>
+          </div>
+
+          <div class="report-system-tag">
+            تم استخراج هذا البيان رسمياً بواسطة تطبيق أجندة الخبير القضائي • LexEnginuity
+          </div>
+        ` : ''}
+      </div>
+    `;
+  },
+
+  executePrint() {
+    const items = this.getFilteredItems();
+    if (items.length === 0) {
+      alert('لا توجد أي مأموريات أو مواعيد مسجلة في الفترة المحددة للطباعة.');
+      return;
+    }
+
+    const startDate = document.getElementById('printStartDate')?.value || '';
+    const endDate = document.getElementById('printEndDate')?.value || '';
+
+    // Populate the hidden printable report area
+    const printArea = document.getElementById('printableReportArea');
+    if (!printArea) return;
+
+    printArea.innerHTML = this.generateReportHtml(items, startDate, endDate, false);
+
+    // Give browser brief time to layout HTML
+    setTimeout(() => {
+      // Check if running on Android WebView Bridge
+      if (window.AndroidPrinter && typeof window.AndroidPrinter.printPage === 'function') {
+        const jobName = `جدول_أعمال_الخبير_${startDate}_${endDate}`;
+        window.AndroidPrinter.printPage(jobName);
+      } else {
+        // Standard window.print for Desktop Web and iOS Safari / WKWebView
+        window.print();
+      }
+    }, 150);
+  }
+};
+
+// ==========================================
+// 6. APPLICATION INITIALIZATION
 // ==========================================
 document.addEventListener('DOMContentLoaded', async () => {
   // Initialize Database
@@ -1608,6 +2850,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     calendar.init();
     updateAgendaTitle(calendar.formatDateStr(state.currentDate));
     reminderSystem.init();
+    searchController.init();
+    printManager.init();
     
   } catch (error) {
     console.error('App init failed:', error);

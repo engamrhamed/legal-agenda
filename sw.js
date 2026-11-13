@@ -1,11 +1,12 @@
-const CACHE_NAME = 'legal-agenda-cache-v3'; // Bumped cache version to force refresh
+const CACHE_NAME = 'legal-agenda-cache-v17'; // Single-row 3-action buttons layout in view modal
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './manifest.json',
-  './assets/icon.png'
+  './assets/icon.png',
+  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
 ];
 
 // Install Event
@@ -33,14 +34,13 @@ self.addEventListener('activate', (e) => {
 });
 
 // Fetch Event - Network-First (Network with Cache Fallback) Strategy
-// This ensures updates are loaded immediately when online, and falls back to cache when offline
 self.addEventListener('fetch', (e) => {
   if (!e.request.url.startsWith('http')) return;
   
   e.respondWith(
     fetch(e.request).then((response) => {
-      // If we got a valid response, update the cache
-      if (response && response.status === 200 && response.type === 'basic') {
+      // If we got a valid response, update the cache (including CORS assets like fonts)
+      if (response && response.status === 200 && (response.type === 'basic' || response.type === 'cors')) {
         const responseToCache = response.clone();
         caches.open(CACHE_NAME).then((cache) => {
           cache.put(e.request, responseToCache);

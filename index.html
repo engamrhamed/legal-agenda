@@ -48,14 +48,17 @@
         </div>
       </div>
       <div class="header-actions">
-        <div id="appInfoBtn" class="action-btn" title="بيانات البرنامج والشركة المطورة">
+        <div id="searchBtn" class="action-btn" title="البحث في المواعيد والمأموريات">
+          <i class="fa-solid fa-magnifying-glass"></i>
+        </div>
+        <div id="appInfoBtn" class="action-btn" title="معلومات البرنامج والشركة المطورة">
           <i class="fa-solid fa-circle-info"></i>
         </div>
-        <div id="notifBellBtn" class="action-btn">
+        <div id="notifBellBtn" class="action-btn" title="مركز التنبيهات">
           <i class="fa-solid fa-bell"></i>
           <span id="notifBadge" class="badge-dot"></span>
         </div>
-        <div id="settingsBtn" class="action-btn">
+        <div id="settingsBtn" class="action-btn" title="إعدادات الأجندة">
           <i class="fa-solid fa-gears"></i>
         </div>
       </div>
@@ -79,13 +82,13 @@
         </div>
         
         <div class="weekdays">
+          <div><span class="desktop-text">السبت</span><span class="mobile-text">س</span></div>
           <div><span class="desktop-text">الأحد</span><span class="mobile-text">ح</span></div>
           <div><span class="desktop-text">الاثنين</span><span class="mobile-text">ن</span></div>
           <div><span class="desktop-text">الثلاثاء</span><span class="mobile-text">ث</span></div>
           <div><span class="desktop-text">الأربعاء</span><span class="mobile-text">ر</span></div>
           <div><span class="desktop-text">الخميس</span><span class="mobile-text">خ</span></div>
           <div><span class="desktop-text">الجمعة</span><span class="mobile-text">ج</span></div>
-          <div><span class="desktop-text">السبت</span><span class="mobile-text">س</span></div>
         </div>
         
         <div id="calendarDays" class="days-grid">
@@ -100,7 +103,13 @@
             <i class="fa-solid fa-calendar-day"></i>
             <span id="agendaDateTitle">مأموريات وإجراءات اليوم</span>
           </div>
-          <span id="caseCount" class="case-count-badge">0 مواعيد ومأموريات</span>
+          <div class="agenda-header-actions">
+            <span id="caseCount" class="case-count-badge">0 مواعيد ومأموريات</span>
+            <button type="button" id="openPrintModalBtn" class="agenda-print-btn" title="طباعة جدول أعمال الخبير">
+              <i class="fa-solid fa-print"></i>
+              <span>طباعة الجدول</span>
+            </button>
+          </div>
         </div>
 
         <!-- Filter bar between All, Cases, and Appointments -->
@@ -122,17 +131,22 @@
       <i class="fa-solid fa-plus"></i>
     </button>
 
-    <!-- Sidebar Panel (Notification Log & App Settings) -->
+    <!-- Common Overlay for Sidebars -->
     <div id="sidebarOverlay" class="sidebar-overlay"></div>
-    <div id="sidebarPanel" class="sidebar-panel">
+
+    <!-- 1. NOTIFICATIONS PANEL (مركز التنبيهات) -->
+    <div id="notifPanel" class="sidebar-panel">
       <div class="sidebar-header">
-        <h3 class="sidebar-title">الإعدادات والتنبيهات</h3>
-        <div id="closeSidebar" class="close-btn">
+        <h3 class="sidebar-title" style="display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-bell" style="color: var(--accent-gold);"></i>
+          <span>مركز التنبيهات</span>
+        </h3>
+        <div id="closeNotifBtn" class="close-btn">
           <i class="fa-solid fa-xmark"></i>
         </div>
       </div>
       
-      <div class="setting-option">
+      <div class="setting-option" style="margin-bottom: 8px;">
         <div class="setting-info">
           <span class="setting-label">الإشعارات التلقائية</span>
           <span class="setting-desc">تنبيه قبل موعد الإجراء بـ ٢٤ ساعة</span>
@@ -143,8 +157,41 @@
         </label>
       </div>
 
+      <div style="border-top: 1.5px solid rgba(255,255,255,0.06); padding-top: 15px; margin-top: 8px; flex: 1; display: flex; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-clock-rotate-left" style="color: var(--accent-gold);"></i>
+            سجل التنبيهات المرسلة
+          </span>
+          <button type="button" id="clearNotifHistoryBtn" style="background: none; border: none; color: var(--text-muted); font-size: 0.72rem; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; transition: color 0.2s;">
+            <i class="fa-solid fa-trash-can"></i> مسح السجل
+          </button>
+        </div>
+        
+        <div id="notifHistory" class="notif-history-list" style="width: 100%; flex: 1; max-height: 480px; overflow-y: auto;">
+          <!-- Reminders history elements -->
+          <div class="empty-state" style="padding: 20px; border-radius: 12px;">
+            <i class="fa-solid fa-bell-slash" style="font-size: 1.5rem;"></i>
+            <p style="font-size: 0.78rem; margin-top: 6px;">لا توجد تنبيهات مرسلة بعد</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. SETTINGS PANEL (إعدادات الأجندة) -->
+    <div id="settingsPanel" class="sidebar-panel">
+      <div class="sidebar-header">
+        <h3 class="sidebar-title" style="display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-gears" style="color: var(--accent-gold);"></i>
+          <span>إعدادات الأجندة</span>
+        </h3>
+        <div id="closeSettingsBtn" class="close-btn">
+          <i class="fa-solid fa-xmark"></i>
+        </div>
+      </div>
+
       <!-- Google Calendar Sync Option -->
-      <div class="setting-option" style="flex-direction: column; align-items: stretch; gap: 8px; border-top: 1.5px solid rgba(255,255,255,0.06); padding-top: 15px;">
+      <div class="setting-option" style="flex-direction: column; align-items: stretch; gap: 8px;">
         <div class="setting-info" style="display: flex; justify-content: space-between; align-items: center;">
           <div>
             <span class="setting-label" style="display: flex; align-items: center; gap: 6px;">
@@ -160,7 +207,7 @@
       </div>
 
       <!-- Combobox Dropdown Lists Customization Section -->
-      <div style="border-top: 1.5px solid rgba(255,255,255,0.06); padding-top: 15px; margin-top: 5px;">
+      <div style="border-top: 1.5px solid rgba(255,255,255,0.06); padding-top: 15px; margin-top: 8px;">
         <h4 style="font-size: 0.85rem; color: var(--accent-gold); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
           <i class="fa-solid fa-list-ul"></i> تخصيص خيارات القوائم
         </h4>
@@ -169,7 +216,10 @@
           <label for="settingsLawsuitTypes" style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">
             خيارات أنواع الدعاوى (مفصولة بفاصلة ,)
           </label>
-          <textarea id="settingsLawsuitTypes" style="font-size: 0.78rem; min-height: 50px; padding: 8px 10px;" placeholder="مدني, تجاري, إيجارات..."></textarea>
+          <textarea id="settingsLawsuitTypes" style="font-size: 0.78rem; min-height: 50px; padding: 8px 10px;" placeholder="استئناف, قضاء إداري, مدني, جنح"></textarea>
+          <small style="font-size: 0.68rem; color: var(--text-muted); display: block; margin-top: 4px;">
+            يمكنك إضافة أو حذف أي نوع دعوى بحرية بالفصل بينها بفاصلة (,)
+          </small>
         </div>
         
         <div class="form-group" style="margin-bottom: 12px;">
@@ -180,24 +230,23 @@
         </div>
 
         <div class="form-group" style="margin-bottom: 12px;">
-          <label for="settingsAppointmentTypes" style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">
-            خيارات تصنيفات المواعيد الأخرى (مفصولة بفاصلة ,)
+          <label for="settingsCourtList" style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">
+            خيارات الجهات المحيلة والمحاكم (مفصولة بفاصلة ,)
           </label>
-          <textarea id="settingsAppointmentTypes" style="font-size: 0.78rem; min-height: 50px; padding: 8px 10px;" placeholder="اجتماع عمل, مقابلة أطراف وعملاء, استشارة فنية..."></textarea>
+          <textarea id="settingsCourtList" style="font-size: 0.78rem; min-height: 50px; padding: 8px 10px;" placeholder="تتجمع تلقائياً من المأموريات المدخلة سابقاً، ويمكنك إضافة أو حذف أي جهة..."></textarea>
+          <small style="font-size: 0.68rem; color: var(--text-muted); display: block; margin-top: 4px;">
+            تتجمع تلقائياً من القيم المدخلة سابقاً، ويمكنك تعديلها أو حذفها يدوياً بالفصل بفاصلة (,)
+          </small>
         </div>
-      </div>
 
-      <div class="setting-option" style="flex-direction: column; align-items: flex-start; gap: 10px; border-top: 1.5px solid rgba(255,255,255,0.06); padding-top: 15px;">
-        <div class="setting-info">
-          <span class="setting-label">سجل التنبيهات الأخيرة</span>
-          <span class="setting-desc">تنبيهات المأموريات والمواعيد المرسلة</span>
-        </div>
-        <div id="notifHistory" class="notif-history-list" style="width: 100%;">
-          <!-- Reminders history elements -->
-          <div class="empty-state" style="padding: 15px; border-radius: 10px;">
-            <i class="fa-solid fa-bell-slash" style="font-size: 1.2rem;"></i>
-            <p style="font-size: 0.72rem;">لا توجد تنبيهات مرسلة بعد</p>
-          </div>
+        <div class="form-group" style="margin-bottom: 12px;">
+          <label for="settingsAppointmentTypes" style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">
+            خيارات تصنيفات المواعيد العامة والأخرى (مفصولة بفاصلة ,)
+          </label>
+          <textarea id="settingsAppointmentTypes" style="font-size: 0.78rem; min-height: 50px; padding: 8px 10px;" placeholder="اجتماع عمل, مهمة إدارية ومكتبية, موعد خارجي, موعد شخصي"></textarea>
+          <small style="font-size: 0.68rem; color: var(--text-muted); display: block; margin-top: 4px;">
+            يمكنك إضافة أو حذف أي تصنيف بحرية بالفصل بينها بفاصلة (,)
+          </small>
         </div>
       </div>
 
@@ -213,6 +262,162 @@
           <i class="fa-solid fa-code"></i> تطوير وبرمجة: شركة LexEnginuity
         </p>
         <p style="font-size: 0.68rem; color: var(--text-muted); margin-top: 4px;">فكرة وإشراف: د. م. عمرو مصطفي حامد • الخبير الهندسي بوزارة العدل</p>
+      </div>
+    </div>
+
+    <!-- Dedicated Search Modal Overlay (نافذة البحث الشامل) -->
+    <div id="searchModalOverlay" class="modal-overlay">
+      <div class="modal-sheet search-modal-sheet">
+        <!-- Search Header with Input Box & Close -->
+        <div class="search-modal-header">
+          <div class="search-box-wrapper">
+            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+            <input type="text" id="searchInput" class="search-input" placeholder="ابحث برقم القضية، الخصوم، المحكمة، الإجراء..." autocomplete="off">
+            <button type="button" id="searchClearBtn" class="search-clear-btn" style="display: none;" title="مسح حقل البحث">
+              <i class="fa-solid fa-circle-xmark"></i>
+            </button>
+          </div>
+          <div id="searchCloseBtn" class="close-btn" title="إغلاق">
+            <i class="fa-solid fa-xmark"></i>
+          </div>
+        </div>
+
+        <!-- Quick Filter Pills -->
+        <div class="search-filter-pills" id="searchFilterPills">
+          <button type="button" class="search-pill active" data-filter="all">
+            <i class="fa-solid fa-layer-group"></i> الكل (<span id="searchCountAll">0</span>)
+          </button>
+          <button type="button" class="search-pill" data-filter="upcoming">
+            <i class="fa-solid fa-hourglass-half"></i> القادمة فقط (<span id="searchCountUpcoming">0</span>)
+          </button>
+          <button type="button" class="search-pill" data-filter="case">
+            <i class="fa-solid fa-gavel"></i> مأموريات (<span id="searchCountCases">0</span>)
+          </button>
+          <button type="button" class="search-pill" data-filter="appointment">
+            <i class="fa-solid fa-calendar-check"></i> مواعيد أخرى (<span id="searchCountAppts">0</span>)
+          </button>
+        </div>
+
+        <!-- Search Results Count/Status Meta Bar -->
+        <div id="searchResultsMeta" class="search-results-meta" style="display: none;">
+          <span id="searchResultsCountText">وجدت 0 نتيجة</span>
+        </div>
+
+        <!-- Results Scrollable List -->
+        <div id="searchResultsList" class="search-results-list">
+          <!-- Populated dynamically via JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Dedicated Print Agenda Modal Overlay (نافذة إعداد وطباعة جدول الأعمال) -->
+    <div id="printModalOverlay" class="modal-overlay">
+      <div class="modal-sheet print-modal-sheet">
+        <div class="modal-header">
+          <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-print" style="color: var(--accent-gold);"></i>
+            <span>طباعة وتصدير جدول أعمال الخبير</span>
+          </h3>
+          <div id="closePrintModalBtn" class="close-btn" title="إغلاق">
+            <i class="fa-solid fa-xmark"></i>
+          </div>
+        </div>
+
+        <!-- Quick Period Presets -->
+        <div class="print-config-section">
+          <label class="print-section-label">
+            <i class="fa-solid fa-bolt" style="color: var(--accent-gold);"></i>
+            <span>اختيار فترة سريعة:</span>
+          </label>
+          <div class="print-preset-buttons" id="printPresetButtons">
+            <button type="button" class="preset-btn" data-preset="today">اليوم المحدد</button>
+            <button type="button" class="preset-btn" data-preset="week">هذا الأسبوع</button>
+            <button type="button" class="preset-btn active" data-preset="month">هذا الشهر</button>
+            <button type="button" class="preset-btn" data-preset="nextMonth">الشهر القادم</button>
+            <button type="button" class="preset-btn" data-preset="all">كامل الأجندة</button>
+          </div>
+        </div>
+
+        <!-- Date Range Inputs (From / To) -->
+        <div class="form-row" style="margin-bottom: 6px;">
+          <div class="form-group">
+            <label for="printStartDate" style="font-size: 0.74rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">
+              من تاريخ:
+            </label>
+            <input type="date" id="printStartDate" class="date-input" style="padding: 9px 12px; font-size: 0.85rem;">
+          </div>
+          <div class="form-group">
+            <label for="printEndDate" style="font-size: 0.74rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">
+              إلى تاريخ:
+            </label>
+            <input type="date" id="printEndDate" class="date-input" style="padding: 9px 12px; font-size: 0.85rem;">
+          </div>
+        </div>
+
+        <!-- Content Type Filter (Both, Cases, Appointments) -->
+        <div class="print-config-section">
+          <label class="print-section-label">
+            <i class="fa-solid fa-filter" style="color: var(--accent-gold);"></i>
+            <span>نوع البيانات المطلوب طباعتها:</span>
+          </label>
+          <div class="print-type-selector" id="printTypeSelector">
+            <label class="print-type-card active">
+              <input type="radio" name="printTypeRadio" value="both" checked>
+              <i class="fa-solid fa-layer-group"></i>
+              <div class="type-text">
+                <b>الاثنين معاً</b>
+                <span>مأموريات ومواعيد</span>
+              </div>
+            </label>
+            <label class="print-type-card">
+              <input type="radio" name="printTypeRadio" value="case">
+              <i class="fa-solid fa-gavel"></i>
+              <div class="type-text">
+                <b>مأموريات فقط</b>
+                <span>دعاوى قضائية</span>
+              </div>
+            </label>
+            <label class="print-type-card">
+              <input type="radio" name="printTypeRadio" value="appointment">
+              <i class="fa-solid fa-calendar-check"></i>
+              <div class="type-text">
+                <b>مواعيد أخرى فقط</b>
+                <span>مهام واجتماعات</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Live Items Count & Period Summary Badge -->
+        <div id="printSummaryStatus" class="print-summary-status">
+          <i class="fa-solid fa-circle-check" style="color: #34d399;"></i>
+          <span id="printSummaryText">جارٍ فحص البنود...</span>
+        </div>
+
+        <!-- Live Report Preview Collapsible Box -->
+        <div class="print-preview-container">
+          <div class="preview-header-bar" id="togglePrintPreviewBtn">
+            <span style="display: flex; align-items: center; gap: 6px; font-weight: 700;">
+              <i class="fa-solid fa-eye" style="color: #38bdf8;"></i>
+              <span>معاينة جدول الأعمال المجهز للطباعة</span>
+            </span>
+            <i class="fa-solid fa-chevron-down" id="previewChevron"></i>
+          </div>
+          <div class="preview-body" id="printPreviewBody" style="display: none;">
+            <div id="printPreviewContent" class="print-preview-content">
+              <!-- Rendered Preview Table -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="form-actions" style="margin-top: 10px; grid-template-columns: 1fr 2fr;">
+          <button type="button" id="cancelPrintBtn" class="btn btn-secondary">إلغاء</button>
+          <button type="button" id="executePrintBtn" class="btn btn-primary" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <i class="fa-solid fa-print"></i>
+            <span>طباعة / حفظ PDF</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -252,13 +457,13 @@
               
               <div class="form-group">
                 <label for="caseYear">سنة القضية *</label>
-                <input type="text" id="caseYear" placeholder="مثال: 2026 أو 57ق" value="2026">
+                <input type="text" id="caseYear" placeholder="مثال: ٢٠٢٦ أو ٥٧ق" value="٢٠٢٦">
               </div>
             </div>
             
             <div class="form-row">
               <div class="form-group" style="grid-column: span 2;">
-                <label for="caseType">نوع الدعوى (قابل للتعديل والكتابة) *</label>
+                <label for="caseType">نوع الدعوى *</label>
                 <input type="text" id="caseType" list="caseTypeList" placeholder="اختر نوع الدعوى أو اكتبه...">
                 <datalist id="caseTypeList">
                   <!-- Populated dynamically via JS settings -->
@@ -268,11 +473,14 @@
             
             <div class="form-group">
               <label for="court">الجهة المحيلة / المحكمة *</label>
-              <input type="text" id="court" placeholder="مثال: محكمة استئناف القاهرة - مكتب خبراء الجيزة">
+              <input type="text" id="court" list="courtList" placeholder="اختر المحكمة/الجهة أو اكتب جهة جديدة...">
+              <datalist id="courtList">
+                <!-- Populated dynamically from previously entered courts -->
+              </datalist>
             </div>
 
             <div class="form-group">
-              <label for="procedureType">نوع الإجراء (قابل للتعديل والكتابة) *</label>
+              <label for="procedureType">نوع الإجراء *</label>
               <input type="text" id="procedureType" list="procedureTypeList" placeholder="اختر نوع الإجراء أو اكتبه...">
               <datalist id="procedureTypeList">
                 <!-- Populated dynamically via JS settings -->
@@ -293,7 +501,7 @@
             </div>
 
             <div class="form-group">
-              <label for="appointmentType">تصنيف نوع الموعد (قابل للتعديل والكتابة) *</label>
+              <label for="appointmentType">تصنيف نوع الموعد *</label>
               <input type="text" id="appointmentType" list="appointmentTypeList" placeholder="اختر تصنيف الموعد أو اكتبه...">
               <datalist id="appointmentTypeList">
                 <!-- Populated dynamically via JS settings -->
@@ -406,12 +614,18 @@
           </div>
         </div>
         
-        <div class="form-actions" style="grid-template-columns: 1fr 1fr; margin-top: 15px;">
-          <button id="viewDeleteBtn" class="btn btn-secondary" style="color: var(--color-danger); border-color: rgba(239, 68, 68, 0.2);">
-            <i class="fa-solid fa-trash"></i> حذف السجل
+        <div class="form-actions" style="grid-template-columns: 0.85fr 0.85fr 1.4fr; gap: 6px; margin-top: 15px;">
+          <button id="viewDeleteBtn" type="button" class="btn btn-secondary" style="color: var(--color-danger); border-color: rgba(239, 68, 68, 0.25); padding: 10px 4px; font-size: 0.8rem; gap: 5px; justify-content: center; white-space: nowrap;">
+            <i class="fa-solid fa-trash"></i>
+            <span>حذف</span>
           </button>
-          <button id="viewEditBtn" class="btn btn-primary">
-            <i class="fa-solid fa-pen-to-square"></i> تعديل البيانات
+          <button id="viewEditBtn" type="button" class="btn btn-primary" style="padding: 10px 4px; font-size: 0.8rem; gap: 5px; justify-content: center; white-space: nowrap;">
+            <i class="fa-solid fa-pen-to-square"></i>
+            <span>تعديل</span>
+          </button>
+          <button id="viewFollowUpBtn" type="button" class="btn" style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 10px 4px; font-weight: 700; font-size: 0.8rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.25); border: none; display: flex; align-items: center; justify-content: center; gap: 5px; cursor: pointer; white-space: nowrap;">
+            <i class="fa-solid fa-calendar-plus"></i>
+            <span id="viewFollowUpBtnText">موعد / إجراء جديد</span>
           </button>
         </div>
       </div>
@@ -491,6 +705,9 @@
     </div>
 
   </div>
+
+  <!-- Dedicated Printable Report Container (Hidden on Screen, Active only during Print) -->
+  <div id="printableReportArea" class="printable-report-area"></div>
 
   <!-- Audio element for notifications chime -->
   <audio id="notifSound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-84.wav" preload="auto"></audio>
