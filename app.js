@@ -47,7 +47,7 @@ class CaseDatabase {
   getAllCases() {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['cases'], 'readonly');
-      const store = transaction.objectStore(['cases']);
+      const store = transaction.objectStore('cases');
       const request = store.getAll();
 
       request.onsuccess = () => resolve(request.result);
@@ -59,7 +59,7 @@ class CaseDatabase {
   getCasesByDate(dateStr) {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['cases'], 'readonly');
-      const store = transaction.objectStore(['cases']);
+      const store = transaction.objectStore('cases');
       const index = store.index('dateOnly');
       const request = index.getAll(dateStr);
 
@@ -78,7 +78,7 @@ class CaseDatabase {
   addCase(caseData) {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['cases'], 'readwrite');
-      const store = transaction.objectStore(['cases']);
+      const store = transaction.objectStore('cases');
       const request = store.add(caseData);
 
       request.onsuccess = () => resolve(request.result);
@@ -90,7 +90,7 @@ class CaseDatabase {
   updateCase(caseData) {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['cases'], 'readwrite');
-      const store = transaction.objectStore(['cases']);
+      const store = transaction.objectStore('cases');
       const request = store.put(caseData);
 
       request.onsuccess = () => resolve(request.result);
@@ -102,7 +102,7 @@ class CaseDatabase {
   deleteCase(id) {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['cases'], 'readwrite');
-      const store = transaction.objectStore(['cases']);
+      const store = transaction.objectStore('cases');
       const request = store.delete(Number(id));
 
       request.onsuccess = () => resolve(true);
@@ -114,9 +114,10 @@ class CaseDatabase {
   markAsNotified(id) {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction(['cases'], 'readwrite');
-      const store = transaction.objectStore(['cases']);
-      
+      const store = transaction.objectStore('cases');
+
       const getReq = store.get(Number(id));
+      getReq.onerror = (e) => reject(e.target.error);
       getReq.onsuccess = () => {
         const data = getReq.result;
         if (data) {
@@ -141,9 +142,82 @@ const state = {
   allCases: [],           // All items in system (for event indicators)
   currentFilter: 'all',   // 'all' | 'case' | 'appointment'
   notificationsEnabled: localStorage.getItem('notificationsEnabled') === 'true',
+  holidayShiftEnabled: localStorage.getItem('holidayShiftEnabled') !== 'false', // Default: true (مفعل أساسياً)
+  theme: localStorage.getItem('appTheme') || 'dark',
   googleHolidays: loadAndNormalizeStoredGoogleHolidays(),
   swRegistration: null
 };
+
+// ==========================================
+// THEME SWITCHER (Dark / Light Theme)
+// ==========================================
+function applyTheme(themeName) {
+  const isLight = themeName === 'light';
+  const effectiveTheme = isLight ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', effectiveTheme);
+  if (document.body) {
+    document.body.setAttribute('data-theme', effectiveTheme);
+  }
+  state.theme = effectiveTheme;
+  localStorage.setItem('appTheme', effectiveTheme);
+
+  const themeToggle = document.getElementById('themeToggle');
+  const themeIcon = document.getElementById('themeIcon');
+  const themeLabelText = document.getElementById('themeLabelText');
+  const themeDescText = document.getElementById('themeDescText');
+
+  if (themeToggle) {
+    themeToggle.checked = isLight;
+  }
+  if (themeIcon) {
+    themeIcon.className = isLight ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+    themeIcon.style.color = isLight ? '#f59e0b' : 'var(--accent-blue)';
+  }
+  if (themeLabelText) {
+    themeLabelText.textContent = 'المظهر النهاري';
+  }
+  if (themeDescText) {
+    themeDescText.textContent = isLight ? 'الوضع النهاري مفعّل (المظهر الفاتح)' : 'الوضع الداكن مفعّل (المظهر الأساسي)';
+  }
+
+  // Update mobile status bar theme color
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  if (themeMeta) {
+    themeMeta.setAttribute('content', isLight ? '#f8fafc' : '#111827');
+  }
+}
+window.applyTheme = applyTheme;
+
+// ==========================================
+// UTILITY & SANITIZATION HELPERS
+// ==========================================
+
+// Helper: Safe HTML Escaping (XSS Prevention)
+function escapeHtml(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Helper: Unified entryType resolution for legacy and new records
+function getEntryType(item) {
+  return (item && item.entryType) ? item.entryType : 'case';
+}
+
+// Helper: Parse YYYY-MM-DD safely into a local Date without UTC offset shift
+function parseLocalDate(dateStr) {
+  if (!dateStr) return new Date();
+  if (dateStr instanceof Date) return dateStr;
+  const parts = String(dateStr).split('T')[0].split('-').map(Number);
+  if (parts.length >= 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+    return new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+  }
+  return new Date(dateStr);
+}
 
 // Helper: load stored Google holidays and guarantee Arabic translations
 function loadAndNormalizeStoredGoogleHolidays() {
@@ -206,12 +280,69 @@ const MOVABLE_HOLIDAYS_ARABIC = {
   '2027-05-19': 'عيد الأضحى المبارك',
   '2027-05-20': 'عيد الأضحى المبارك',
   '2027-06-06': 'رأس السنة الهجرية',
-  '2027-08-14': 'المولد النبوي الشريف'
+  '2027-08-14': 'المولد النبوي الشريف',
+  // 2028 (تواريخ هجرية متوقعة فلكياً وفق حسابات المعهد القومي للبحوث الفلكية والجيوفيزيقية NRIAG)
+  '2028-02-27': 'عيد الفطر المبارك', // متوقع فلكياً (١ شوال ١٤٤٩هـ)
+  '2028-02-28': 'عيد الفطر المبارك', // متوقع فلكياً
+  '2028-02-29': 'عيد الفطر المبارك', // متوقع فلكياً
+  '2028-04-17': 'شم النسيم',          // الفصح الشرقي
+  '2028-05-04': 'وقفة عرفات',        // متوقع فلكياً (٩ ذو الحجة ١٤٤٩هـ)
+  '2028-05-05': 'عيد الأضحى المبارك', // متوقع فلكياً (١٠ ذو الحجة ١٤٤٩هـ)
+  '2028-05-06': 'عيد الأضحى المبارك', // متوقع فلكياً
+  '2028-05-07': 'عيد الأضحى المبارك', // متوقع فلكياً
+  '2028-05-08': 'عيد الأضحى المبارك', // متوقع فلكياً
+  '2028-05-25': 'رأس السنة الهجرية',   // متوقع فلكياً (١ محرم ١٤٥٠هـ)
+  '2028-08-03': 'المولد النبوي الشريف'  // متوقع فلكياً (١٢ ربيع الأول ١٤٥٠هـ)
 };
 
 // Aliases for compatibility
 const fixedHolidays = FIXED_HOLIDAYS_ARABIC;
 const movableHolidays = MOVABLE_HOLIDAYS_ARABIC;
+
+// Official Egyptian Public Holidays by law
+const OFFICIAL_EGYPTIAN_HOLIDAY_NAMES = new Set([
+  'عيد الميلاد المجيد',
+  'عيد ثورة 25 يناير وعيد الشرطة',
+  'عيد تحرير سيناء',
+  'عيد العمال',
+  'شم النسيم',
+  'وقفة عرفات',
+  'عيد الأضحى المبارك',
+  'رأس السنة الهجرية',
+  'ثورة 30 يونيو',
+  'عيد ثورة 23 يوليو',
+  'المولد النبوي الشريف',
+  'عيد القوات المسلحة (٦ أكتوبر)',
+  'عيد الفطر المبارك'
+]);
+
+// Official Egyptian Holidays subject to Prime Minister Decree 1249/2020 for shifting to Thursday
+const SHIFTABLE_EGYPTIAN_HOLIDAY_NAMES = new Set([
+  'عيد ثورة 25 يناير وعيد الشرطة',
+  'عيد تحرير سيناء',
+  'عيد العمال',
+  'ثورة 30 يونيو',
+  'عيد ثورة 23 يوليو',
+  'عيد القوات المسلحة (٦ أكتوبر)',
+  'المولد النبوي الشريف',
+  'رأس السنة الهجرية'
+]);
+
+function isShiftableEgyptianHoliday(name) {
+  if (!name) return false;
+  for (const item of SHIFTABLE_EGYPTIAN_HOLIDAY_NAMES) {
+    if (name === item || name.includes(item)) return true;
+  }
+  return false;
+}
+
+function isOfficialEgyptianHoliday(name) {
+  if (!name) return false;
+  for (const item of OFFICIAL_EGYPTIAN_HOLIDAY_NAMES) {
+    if (name === item || name.includes(item)) return true;
+  }
+  return false;
+}
 
 // Normalize any holiday title (Arabic or English from Google Calendar) to standard formal Arabic
 function normalizeHolidayNameToArabic(rawName, dateStr = '') {
@@ -221,67 +352,85 @@ function normalizeHolidayNameToArabic(rawName, dateStr = '') {
     if (MOVABLE_HOLIDAYS_ARABIC[dateStr]) return MOVABLE_HOLIDAYS_ARABIC[dateStr];
   }
   if (!rawName) return '';
-  const lower = String(rawName).toLowerCase();
+  const lower = String(rawName).toLowerCase().trim();
 
-  // 6 October / Armed Forces Day
-  if (lower.includes('armed forces') || lower.includes('قوات مسلحة') || lower.includes('أكتوبر') || lower.includes('اكتوبر') || lower.includes('6 oct') || lower.includes('6th of oct')) {
-    return 'عيد القوات المسلحة (٦ أكتوبر)';
+  // Religious & social observances that are NOT official public days off in Egypt
+  if (lower.includes('ramadan') || lower.includes('رمضان')) {
+    return 'بداية شهر رمضان المبارك';
   }
-  // 25 January / Police Day / Revolution Day 2011
-  if (lower.includes('25') || lower.includes('police') || lower.includes('شرطة') || (lower.includes('revolution') && lower.includes('2011'))) {
-    return 'عيد ثورة 25 يناير وعيد الشرطة';
+  if (lower.includes('qadr') || lower.includes('القدر')) {
+    return 'ليلة القدر المباركة';
   }
-  // Sinai Liberation (25 April)
-  if (lower.includes('sinai') || lower.includes('سيناء')) {
-    return 'عيد تحرير سيناء';
+  if (lower.includes("mother's day") || lower.includes('mothers day') || lower.includes('عيد الأم') || lower.includes('عيد الام')) {
+    return 'عيد الأم';
   }
-  // Labour Day (1 May)
-  if (lower.includes('labour') || lower.includes('labor') || lower.includes('عمال')) {
-    return 'عيد العمال';
+  if (lower.includes('orphan') || lower.includes('اليتيم')) {
+    return 'يوم اليتيم';
   }
-  // June 30
-  if (lower.includes('june 30') || lower.includes('30 june') || lower.includes('30 يونيو') || lower.includes('يونيو')) {
-    return 'ثورة 30 يونيو';
-  }
-  // July 23
-  if (lower.includes('july 23') || lower.includes('23 july') || lower.includes('23 يوليو') || lower.includes('يوليو') || (lower.includes('revolution') && !lower.includes('2011') && !lower.includes('30'))) {
-    return 'عيد ثورة 23 يوليو';
-  }
-  // Christmas
-  if (lower.includes('christmas') || lower.includes('ميلاد')) {
-    return 'عيد الميلاد المجيد';
-  }
-  // Sham El-Nessim
-  if (lower.includes('nessim') || lower.includes('easter monday') || lower.includes('نسيم')) {
-    return 'شم النسيم';
-  }
-  // Arafat
-  if (lower.includes('arafat') || lower.includes('عرفات') || lower.includes('وقفة')) {
+
+  // 1. Specific Religious & Traditional Holidays (Highest Priority)
+  // Arafat Day
+  if (lower.includes('arafat') || lower.includes('عرفات') || lower.includes('عرفة') || lower.includes('وقفة عرف')) {
     return 'وقفة عرفات';
   }
-  // Eid Al-Adha
-  if (lower.includes('adha') || lower.includes('أضحى') || lower.includes('اضحى')) {
+  // Eid Al-Adha (Feast of Sacrifice)
+  if (lower.includes('adha') || lower.includes('أضحى') || lower.includes('اضحى') || lower.includes('نحر')) {
     return 'عيد الأضحى المبارك';
   }
   // Eid Al-Fitr
   if (lower.includes('fitr') || lower.includes('فطر')) {
     return 'عيد الفطر المبارك';
   }
-  // Islamic / Hijri New Year
-  if (lower.includes('islamic new year') || lower.includes('hijri') || lower.includes('هجرية') || lower.includes('هجري')) {
-    return 'رأس السنة الهجرية';
-  }
   // Prophet's Birthday / Mawlid
-  if (lower.includes('prophet') || lower.includes('mawlid') || lower.includes('مولد')) {
+  if (lower.includes('prophet') || lower.includes('mawlid') || lower.includes('مولد نبوي') || lower.includes('المولد النبوي') || lower.includes('المولد')) {
     return 'المولد النبوي الشريف';
   }
+  // Islamic / Hijri New Year
+  if (lower.includes('islamic new year') || lower.includes('hijri new year') || lower.includes('رأس السنة الهجرية') || lower.includes('السنة الهجرية') || (lower.includes('hijri') && lower.includes('new year'))) {
+    return 'رأس السنة الهجرية';
+  }
+  // Sham El-Nessim (Spring festival)
+  if (lower.includes('nessim') || lower.includes('نسيم') || lower.includes('spring day') || lower.includes('easter monday')) {
+    return 'شم النسيم';
+  }
+  // Coptic Christmas (January 7)
+  if (lower.includes('coptic christmas') || lower.includes('eastern christmas') || lower.includes('ميلاد مجيد') || lower.includes('الميلاد المجيد') || (lower.includes('christmas') && (lower.includes('7') || lower.includes('jan')))) {
+    return 'عيد الميلاد المجيد';
+  }
 
-  // Fallback cleanup
+  // 2. Specific Egyptian National & Civic Holidays
+  // Labour Day (May 1)
+  if (lower.includes('labour') || lower.includes('labor') || lower.includes('عمال')) {
+    return 'عيد العمال';
+  }
+  // Sinai Liberation Day (April 25)
+  if (lower.includes('sinai') || lower.includes('سيناء')) {
+    return 'عيد تحرير سيناء';
+  }
+  // 6 October / Armed Forces Day
+  if (lower.includes('armed forces') || (lower.includes('قوات') && lower.includes('مسلح')) || (lower.includes('october') && lower.includes('6')) || (lower.includes('أكتوبر') && lower.includes('6')) || (lower.includes('اكتوبر') && lower.includes('6')) || lower.includes('حرب أكتوبر') || lower.includes('نصر أكتوبر') || lower.includes('6 oct')) {
+    return 'عيد القوات المسلحة (٦ أكتوبر)';
+  }
+  // 30 June Revolution
+  if ((lower.includes('30') && (lower.includes('june') || lower.includes('يونيو'))) || lower.includes('ثورة 30 يونيو') || lower.includes('30 يونيو')) {
+    return 'ثورة 30 يونيو';
+  }
+  // 23 July Revolution
+  if ((lower.includes('23') && (lower.includes('july') || lower.includes('يوليو'))) || lower.includes('ثورة 23 يوليو') || lower.includes('23 يوليو')) {
+    return 'عيد ثورة 23 يوليو';
+  }
+  // 25 January Revolution & Police Day
+  if ((lower.includes('25') && (lower.includes('jan') || lower.includes('يناير'))) || lower.includes('police') || lower.includes('شرطة') || (lower.includes('revolution') && lower.includes('2011')) || lower.includes('ثورة 25 يناير') || lower.includes('25 يناير')) {
+    return 'عيد ثورة 25 يناير وعيد الشرطة';
+  }
+
+  // 3. Fallback: clean up standard prefixes/suffixes
   let cleaned = String(rawName)
     .replace(/^Day off for\s+/i, '')
     .replace(/^عطلة بمناسبة\s+/i, '')
     .replace(/\s*\(Observed\)/i, '')
     .replace(/\s*\(مرحل\)/i, '')
+    .replace(/^[-•*–—\s]+|[-•*–—\s]+$/g, '')
     .trim();
 
   if (dateStr) {
@@ -295,8 +444,9 @@ function normalizeHolidayNameToArabic(rawName, dateStr = '') {
 
 // Comprehensive Holiday Status Evaluator:
 // Distinguishes with 100% precision between:
-// 1. 'actual_day_off' (RED): Thursdays when shifted, or non-shiftable religious/national holidays.
+// 1. 'actual_day_off' (RED): Official public day off (shifted to Thursday or fixed).
 // 2. 'original_work_day' (GREEN): Sunday-Wednesday original dates of shifted holidays (courts open / working days).
+// 3. 'observance' (BLUE): Social & religious observances that are NOT official days off (courts open / working days).
 function getHolidayStatus(dateStr) {
   const parts = dateStr.split('-');
   const year = parseInt(parts[0], 10);
@@ -328,80 +478,89 @@ function getHolidayStatus(dateStr) {
   }
 
   const gEvent = state.googleHolidays ? state.googleHolidays[dateStr] : null;
+  const isShiftActive = state.holidayShiftEnabled !== false;
 
-  // 2. Sunday (0), Monday (1), Tuesday (2), or Wednesday (3):
-  // According to Prime Minister Decree 1249/2020, shiftable holidays in mid-week are SHIFTED to Thursday.
-  // Therefore, this original weekday is NEVER a day off in courts -> ALWAYS GREEN (original_work_day)!
-  if (dayOfWeek >= 0 && dayOfWeek <= 3) {
-    let originalName = null;
-    if (gEvent) {
-      originalName = normalizeHolidayNameToArabic(gEvent, dateStr);
-    } else if (FIXED_HOLIDAYS_ARABIC[md] && md !== '01-07') {
-      originalName = FIXED_HOLIDAYS_ARABIC[md];
-    } else if (MOVABLE_HOLIDAYS_ARABIC[dateStr]) {
-      const mName = MOVABLE_HOLIDAYS_ARABIC[dateStr];
-      if (mName.includes('الهجرية') || mName.includes('النبوي')) {
-        originalName = mName;
-      }
+  // Direct holiday on this exact date (if any)
+  let directHolidayName = null;
+  if (gEvent) {
+    const norm = normalizeHolidayNameToArabic(gEvent, dateStr);
+    if (isShiftableEgyptianHoliday(norm) || isOfficialEgyptianHoliday(norm)) {
+      directHolidayName = norm;
     }
-
-    if (originalName) {
-      const offsetToThu = 4 - dayOfWeek;
-      const thuDate = new Date(year, month, day + offsetToThu);
-      const thuDay = thuDate.getDate();
-      const monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-      const thuMonthName = monthNames[thuDate.getMonth()];
-      return {
-        type: 'original_work_day',
-        name: originalName,
-        thuDateFormatted: `${thuDay} ${thuMonthName}`,
-        badgeText: `تاريخ المناسبة الرسمي: ${originalName} • (يوم عمل بالمحاكم - الإجازة الرسمية مرحّلة إلى الخميس ${thuDay} ${thuMonthName})`
-      };
+  } else if (FIXED_HOLIDAYS_ARABIC[md] && md !== '01-07') {
+    directHolidayName = FIXED_HOLIDAYS_ARABIC[md];
+  } else if (MOVABLE_HOLIDAYS_ARABIC[dateStr]) {
+    const mName = MOVABLE_HOLIDAYS_ARABIC[dateStr];
+    if (mName.includes('الهجرية') || mName.includes('النبوي')) {
+      directHolidayName = mName;
     }
   }
 
-  // 3. Thursday (day 4):
-  // The official day off for shifted holidays -> ALWAYS RED (actual_day_off)!
-  if (dayOfWeek === 4) {
-    // Check if Google Calendar has an event for this Thursday
-    if (gEvent) {
-      const arabicName = normalizeHolidayNameToArabic(gEvent, dateStr);
+  // Case A: Holiday Shifting is DISABLED by user -> Holiday stays on exact date as day off
+  if (!isShiftActive) {
+    if (directHolidayName) {
       return {
         type: 'actual_day_off',
-        name: `${arabicName} (مرحّلة بقرار مجلس الوزراء)`,
-        badgeText: `عطلة رسمية بمصر: ${arabicName} (مرحّلة بقرار مجلس الوزراء)`
+        name: directHolidayName,
+        badgeText: `عطلة رسمية بمصر: ${directHolidayName} (في موعدها الأصلي بدون ترحيل)`
       };
     }
+  } else {
+    // Case B: Holiday Shifting is ENABLED (Default according to Prime Minister Decree 1249/2020)
+    // 2. Sunday (0), Monday (1), Tuesday (2), or Wednesday (3):
+    if (dayOfWeek >= 0 && dayOfWeek <= 3) {
+      if (directHolidayName && isShiftableEgyptianHoliday(directHolidayName)) {
+        const offsetToThu = 4 - dayOfWeek;
+        const thuDate = new Date(year, month, day + offsetToThu);
+        const thuDay = thuDate.getDate();
+        const monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+        const thuMonthName = monthNames[thuDate.getMonth()];
+        return {
+          type: 'original_work_day',
+          name: directHolidayName,
+          thuDateFormatted: `${thuDay} ${thuMonthName}`,
+          badgeText: `تاريخ المناسبة الرسمي: ${directHolidayName} • (يوم عمل بالمحاكم - الإجازة الرسمية مرحّلة إلى الخميس ${thuDay} ${thuMonthName})`
+        };
+      }
+    }
 
-    // Look back at earlier days of this week (Sunday to Thursday)
-    for (let offset = 0; offset <= 4; offset++) {
-      const cDate = new Date(year, month, day - offset);
-      const cYear = cDate.getFullYear();
-      const cMonth = String(cDate.getMonth() + 1).padStart(2, '0');
-      const cDay = String(cDate.getDate()).padStart(2, '0');
-      const cDateStr = `${cYear}-${cMonth}-${cDay}`;
-      const cMd = `${cMonth}-${cDay}`;
-
-      let foundName = null;
-      if (state.googleHolidays && state.googleHolidays[cDateStr]) {
-        foundName = normalizeHolidayNameToArabic(state.googleHolidays[cDateStr], cDateStr);
-      } else if (FIXED_HOLIDAYS_ARABIC[cMd] && cMd !== '01-07') {
-        foundName = FIXED_HOLIDAYS_ARABIC[cMd];
-      } else if (MOVABLE_HOLIDAYS_ARABIC[cDateStr]) {
-        const m = MOVABLE_HOLIDAYS_ARABIC[cDateStr];
-        if (m.includes('الهجرية') || m.includes('النبوي')) {
-          foundName = m;
-        }
+    // 3. Thursday (day 4):
+    // The official day off for shifted holidays -> ALWAYS RED (actual_day_off)!
+    if (dayOfWeek === 4) {
+      // Check if direct holiday falls on Thursday
+      if (directHolidayName) {
+        return {
+          type: 'actual_day_off',
+          name: directHolidayName,
+          badgeText: `عطلة رسمية بمصر: ${directHolidayName}`
+        };
       }
 
-      if (foundName) {
-        if (offset === 0) {
-          return {
-            type: 'actual_day_off',
-            name: foundName,
-            badgeText: `عطلة رسمية بمصر: ${foundName}`
-          };
-        } else {
+      // Look back at earlier days of this week (Sunday to Wednesday)
+      for (let offset = 1; offset <= 4; offset++) {
+        const cDate = new Date(year, month, day - offset);
+        const cYear = cDate.getFullYear();
+        const cMonth = String(cDate.getMonth() + 1).padStart(2, '0');
+        const cDay = String(cDate.getDate()).padStart(2, '0');
+        const cDateStr = `${cYear}-${cMonth}-${cDay}`;
+        const cMd = `${cMonth}-${cDay}`;
+
+        let foundName = null;
+        if (state.googleHolidays && state.googleHolidays[cDateStr]) {
+          const norm = normalizeHolidayNameToArabic(state.googleHolidays[cDateStr], cDateStr);
+          if (isShiftableEgyptianHoliday(norm)) {
+            foundName = norm;
+          }
+        } else if (FIXED_HOLIDAYS_ARABIC[cMd] && cMd !== '01-07') {
+          foundName = FIXED_HOLIDAYS_ARABIC[cMd];
+        } else if (MOVABLE_HOLIDAYS_ARABIC[cDateStr]) {
+          const m = MOVABLE_HOLIDAYS_ARABIC[cDateStr];
+          if (m.includes('الهجرية') || m.includes('النبوي')) {
+            foundName = m;
+          }
+        }
+
+        if (foundName && isShiftableEgyptianHoliday(foundName)) {
           return {
             type: 'actual_day_off',
             name: `${foundName} (مرحّلة بقرار مجلس الوزراء)`,
@@ -414,19 +573,23 @@ function getHolidayStatus(dateStr) {
 
   // 4. Weekend holidays (Friday or Saturday) -> RED
   if (dayOfWeek === 5 || dayOfWeek === 6) {
-    let wName = null;
-    if (gEvent) {
-      wName = normalizeHolidayNameToArabic(gEvent, dateStr);
-    } else if (FIXED_HOLIDAYS_ARABIC[md] && md !== '01-07') {
-      wName = FIXED_HOLIDAYS_ARABIC[md];
-    } else if (MOVABLE_HOLIDAYS_ARABIC[dateStr]) {
-      wName = MOVABLE_HOLIDAYS_ARABIC[dateStr];
-    }
-    if (wName) {
+    if (directHolidayName) {
       return {
         type: 'actual_day_off',
-        name: wName,
-        badgeText: `عطلة رسمية بمصر: ${wName}`
+        name: directHolidayName,
+        badgeText: `عطلة رسمية بمصر: ${directHolidayName}`
+      };
+    }
+  }
+
+  // 5. Social & Religious Observances (e.g. Ramadan start, Mother's Day, Laylat al-Qadr) -> BLUE (Working day in courts)
+  if (gEvent) {
+    const norm = normalizeHolidayNameToArabic(gEvent, dateStr);
+    if (!isOfficialEgyptianHoliday(norm) && !isShiftableEgyptianHoliday(norm)) {
+      return {
+        type: 'observance',
+        name: norm,
+        badgeText: `مناسبة: ${norm} • (يوم عمل طبيعي بالمحاكم)`
       };
     }
   }
@@ -465,16 +628,16 @@ function updateDatalists() {
   const lawsuitVal = localStorage.getItem('lawsuitTypes') || '';
   const procedureVal = localStorage.getItem('procedureTypes') || '';
   const appointmentVal = localStorage.getItem('appointmentTypes') || '';
-  
+
   const lawsuitList = lawsuitVal.split(',').map(s => s.trim()).filter(Boolean);
   const procedureList = procedureVal.split(',').map(s => s.trim()).filter(Boolean);
   const appointmentList = appointmentVal.split(',').map(s => s.trim()).filter(Boolean);
-  
+
   const lawsuitDatalist = document.getElementById('caseTypeList');
   const procedureDatalist = document.getElementById('procedureTypeList');
   const appointmentDatalist = document.getElementById('appointmentTypeList');
   const courtDatalist = document.getElementById('courtList');
-  
+
   if (lawsuitDatalist) {
     lawsuitDatalist.innerHTML = '';
     lawsuitList.forEach(item => {
@@ -483,7 +646,7 @@ function updateDatalists() {
       lawsuitDatalist.appendChild(opt);
     });
   }
-  
+
   if (procedureDatalist) {
     procedureDatalist.innerHTML = '';
     procedureList.forEach(item => {
@@ -549,7 +712,7 @@ const calendar = {
   init() {
     state.selectedDateStr = this.formatDateStr(state.currentDate);
     this.render();
-    
+
     // Bind navigation buttons
     document.getElementById('prevMonth').addEventListener('click', () => this.changeMonth(-1));
     document.getElementById('nextMonth').addEventListener('click', () => this.changeMonth(1));
@@ -616,10 +779,10 @@ const calendar = {
       const diffY = currentY - startY;
 
       // Check if gesture is primarily horizontal and exceeds threshold
-      if (Math.abs(diffX) >= minSwipeDistance && 
-          Math.abs(diffY) <= maxPerpendicularDistance && 
-          Math.abs(diffX) > Math.abs(diffY) * 1.2) {
-        
+      if (Math.abs(diffX) >= minSwipeDistance &&
+        Math.abs(diffY) <= maxPerpendicularDistance &&
+        Math.abs(diffX) > Math.abs(diffY) * 1.2) {
+
         // Suppress accidental day-cell clicks following a swipe
         suppressClick = true;
         setTimeout(() => { suppressClick = false; }, 300);
@@ -679,25 +842,25 @@ const calendar = {
   async render() {
     const calendarMonthYear = document.getElementById('calendarMonthYear');
     const calendarDays = document.getElementById('calendarDays');
-    
+
     const year = state.currentDate.getFullYear();
     const month = state.currentDate.getMonth(); // 0-indexed
-    
+
     calendarMonthYear.textContent = `${this.monthsAr[month]} ${year}`;
     calendarDays.innerHTML = '';
-    
+
     // Get first day of month aligned with week starting Saturday (0 = Saturday, 1 = Sunday, ..., 6 = Friday)
     const firstDayIndex = (new Date(year, month, 1).getDay() + 1) % 7;
     // Get last date of current month
     const totalDays = new Date(year, month + 1, 0).getDate();
     // Get last date of previous month
     const prevTotalDays = new Date(year, month, 0).getDate();
-    
+
     // Fetch all cases in the background to set event dots
     state.allCases = await state.db.getAllCases();
     updateDatalists();
     const eventDates = new Set(state.allCases.map(c => c.dateOnly));
-    
+
     // Today's formatted date string for highlight
     const todayStr = this.formatDateStr(new Date());
 
@@ -706,31 +869,31 @@ const calendar = {
       const dayNum = prevTotalDays - i;
       const prevMonthDate = new Date(year, month - 1, dayNum);
       const prevDateStr = this.formatDateStr(prevMonthDate);
-      
+
       const dayCell = this.createDayCell(dayNum, prevDateStr, true, eventDates.has(prevDateStr), todayStr);
       calendarDays.appendChild(dayCell);
     }
-    
+
     // 2. Current Month days
     for (let dayNum = 1; dayNum <= totalDays; dayNum++) {
       const currMonthDate = new Date(year, month, dayNum);
       const currDateStr = this.formatDateStr(currMonthDate);
-      
+
       const dayCell = this.createDayCell(dayNum, currDateStr, false, eventDates.has(currDateStr), todayStr);
       calendarDays.appendChild(dayCell);
     }
-    
+
     // 3. Next Month Overflow days
     const totalCellsFilled = firstDayIndex + totalDays;
     const remainingCells = (7 - (totalCellsFilled % 7)) % 7;
     for (let dayNum = 1; dayNum <= remainingCells; dayNum++) {
       const nextMonthDate = new Date(year, month + 1, dayNum);
       const nextDateStr = this.formatDateStr(nextMonthDate);
-      
+
       const dayCell = this.createDayCell(dayNum, nextDateStr, true, eventDates.has(nextDateStr), todayStr);
       calendarDays.appendChild(dayCell);
     }
-    
+
     // Refresh cases list under the calendar
     loadDailyAgenda();
   },
@@ -740,13 +903,13 @@ const calendar = {
     cell.classList.add('day-cell');
     cell.textContent = dayNum;
     cell.dataset.date = dateStr;
-    
+
     if (isOtherMonth) cell.classList.add('other-month');
     if (dateStr === todayStr) cell.classList.add('today');
     if (dateStr === state.selectedDateStr) cell.classList.add('selected');
     if (hasEvent) cell.classList.add('has-event');
-    
-    // Check for Egyptian Public Holiday (Original Green vs Shifted Red)
+
+    // Check for Egyptian Public Holiday (Original Green vs Shifted Red vs Social Observance Blue)
     const holidayInfo = getHolidayStatus(dateStr);
     if (holidayInfo) {
       if (holidayInfo.type === 'actual_day_off') {
@@ -755,23 +918,26 @@ const calendar = {
       } else if (holidayInfo.type === 'original_work_day') {
         cell.classList.add('holiday-original'); // GREEN
         cell.title = holidayInfo.badgeText;
+      } else if (holidayInfo.type === 'observance') {
+        cell.classList.add('holiday-observance'); // BLUE
+        cell.title = holidayInfo.badgeText;
       }
     }
-    
+
     // Add Click listener
     cell.addEventListener('click', () => {
       // Remove previous selected class
       const activeCell = document.querySelector('.day-cell.selected');
       if (activeCell) activeCell.classList.remove('selected');
-      
+
       cell.classList.add('selected');
       state.selectedDateStr = dateStr;
-      
+
       // Update agenda title date formatted in Arabic
       updateAgendaTitle(dateStr);
       loadDailyAgenda();
     });
-    
+
     return cell;
   }
 };
@@ -779,8 +945,8 @@ const calendar = {
 // Update date header for the Agenda section
 function updateAgendaTitle(dateStr) {
   const agendaDateTitle = document.getElementById('agendaDateTitle');
-  const d = new Date(dateStr);
-  
+  const d = parseLocalDate(dateStr);
+
   // Format options: "الخميس، ٢ يوليو ٢٠٢٦"
   const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
   const formatted = new Intl.DateTimeFormat('ar-EG', options).format(d);
@@ -795,15 +961,15 @@ function updateAgendaTitle(dateStr) {
 async function loadDailyAgenda() {
   const caseList = document.getElementById('caseList');
   const caseCount = document.getElementById('caseCount');
-  
+
   try {
     state.casesList = await state.db.getCasesByDate(state.selectedDateStr);
-    
+
     // Counts breakdown
     const totalCount = state.casesList.length;
     const caseItems = state.casesList.filter(c => (c.entryType || 'case') === 'case');
     const appointmentItems = state.casesList.filter(c => c.entryType === 'appointment');
-    
+
     const countCases = caseItems.length;
     const countAppts = appointmentItems.length;
 
@@ -823,7 +989,7 @@ async function loadDailyAgenda() {
     } else {
       caseCount.textContent = `${countCases} مأموريات`;
     }
-    
+
     // Check for Egyptian Public Holiday (Original Green vs Shifted Red)
     const holidayInfo = getHolidayStatus(state.selectedDateStr);
     let holidayBannerHtml = '';
@@ -842,9 +1008,16 @@ async function loadDailyAgenda() {
             <span>${holidayInfo.badgeText}</span>
           </div>
         `;
+      } else if (holidayInfo.type === 'observance') {
+        holidayBannerHtml = `
+          <div style="background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.25); color: #38bdf8; padding: 12px 14px; border-radius: 16px; font-size: 0.82rem; text-align: center; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(56, 189, 248, 0.05);">
+            <i class="fa-solid fa-moon" style="color: #38bdf8; font-size: 1rem;"></i>
+            <span>${holidayInfo.badgeText}</span>
+          </div>
+        `;
       }
     }
-    
+
     // Filter items based on active tab
     const filteredItems = state.casesList.filter(item => {
       const isAppt = item.entryType === 'appointment';
@@ -869,15 +1042,15 @@ async function loadDailyAgenda() {
       `;
       return;
     }
-    
+
     caseList.innerHTML = holidayBannerHtml;
     filteredItems.forEach((c) => {
       const timeStr = formatArabicTime(c.dateTime);
       const isAppointment = c.entryType === 'appointment';
-      
+
       const card = document.createElement('div');
       card.setAttribute('data-id', c.id);
-      
+
       if (isAppointment) {
         // Render Appointment Card
         card.className = 'case-card appointment-card';
@@ -885,22 +1058,22 @@ async function loadDailyAgenda() {
           <div class="case-header">
             <div class="case-num-title" style="color: #38bdf8;">
               <i class="fa-solid fa-calendar-check" style="margin-left: 5px; color: #38bdf8;"></i>
-              <span>${c.title}</span>
+              <span>${escapeHtml(c.title)}</span>
             </div>
-            <span class="appointment-type-badge">${c.appointmentType || 'موعد عام'}</span>
+            <span class="appointment-type-badge">${escapeHtml(c.appointmentType || 'موعد عام')}</span>
           </div>
           
           <div class="case-details-grid">
             ${c.location ? `
               <div class="detail-item">
                 <i class="fa-solid fa-location-dot" style="color: #38bdf8;"></i>
-                <span>${c.location}</span>
+                <span>${escapeHtml(c.location)}</span>
               </div>
             ` : ''}
             ${c.notes ? `
               <div class="detail-item procedure-detail" style="border-right: 2.5px solid #38bdf8;">
                 <i class="fa-solid fa-note-sticky" style="color: #38bdf8;"></i>
-                <span>${c.notes}</span>
+                <span>${escapeHtml(c.notes)}</span>
               </div>
             ` : ''}
           </div>
@@ -932,21 +1105,21 @@ async function loadDailyAgenda() {
           <div class="case-header">
             <div class="case-num-title">
               <i class="fa-solid fa-folder-open" style="margin-left: 5px;"></i>
-              ملف رقم: <span>${c.caseNumber}</span> / <span>${c.caseYear}</span>
+              ملف رقم: <span>${escapeHtml(c.caseNumber)}</span> / <span>${escapeHtml(c.caseYear)}</span>
             </div>
-            <span class="case-type-badge">${c.caseType}</span>
+            <span class="case-type-badge">${escapeHtml(c.caseType || '')}</span>
           </div>
           
           <div class="case-details-grid">
             <div class="detail-item">
               <i class="fa-solid fa-landmark"></i>
-              <span>${c.court}</span>
+              <span>${escapeHtml(c.court)}</span>
             </div>
             <div class="detail-item procedure-detail">
               <i class="fa-solid fa-list-check"></i>
               <span>
-                <b>${pType}</b>
-                ${pDetails ? `<div style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px; line-height:1.3;">${pDetails}</div>` : ''}
+                <b>${escapeHtml(pType)}</b>
+                ${pDetails ? `<div style="font-size:0.75rem; color:var(--text-secondary); margin-top:2px; line-height:1.3;">${escapeHtml(pDetails)}</div>` : ''}
               </span>
             </div>
           </div>
@@ -968,17 +1141,17 @@ async function loadDailyAgenda() {
           </div>
         `;
       }
-      
+
       // Tap on card body opens details view
       card.addEventListener('click', (e) => {
         if (e.target.closest('.card-action-btn')) return;
         showViewModal(c);
       });
-      
+
       // Bind action buttons
       card.querySelector('.card-action-btn.edit').addEventListener('click', () => showAddEditModal(c.id));
       card.querySelector('.card-action-btn.delete').addEventListener('click', () => confirmDeleteCase(c.id));
-      
+
       caseList.appendChild(card);
     });
   } catch (error) {
@@ -989,7 +1162,7 @@ async function loadDailyAgenda() {
 // Class prefix matching case types for card accents
 function getCaseCardClass(type) {
   if (!type) return 'type-other';
-  
+
   if (type.includes('مدني')) return 'type-civil'; // Blue border
   if (type.includes('تجاري') || type.includes('إفلاس') || type.includes('مالي')) return 'type-civil';
   if (type.includes('عمالي') || type.includes('ضرائب')) return 'type-criminal'; // Red border
@@ -1080,12 +1253,8 @@ function setEntryType(type) {
 // ==========================================
 function resetScrollLocks() {
   try {
-    window.scrollTo(0, 0);
-    document.documentElement.scrollTop = 0;
-    document.body.scrollTop = 0;
-    const appCont = document.querySelector('.app-container');
-    if (appCont) appCont.scrollTop = 0;
-  } catch (e) {}
+    document.body.style.overflow = '';
+  } catch (e) { }
 }
 
 function closeTopmostModal() {
@@ -1093,6 +1262,7 @@ function closeTopmostModal() {
   if (confirmModal && confirmModal.classList.contains('active')) {
     confirmModal.classList.remove('active');
     pendingDeleteId = null;
+    document.body.style.overflow = '';
     return true;
   }
 
@@ -1115,6 +1285,7 @@ function closeTopmostModal() {
     } else {
       searchModal.classList.remove('active');
     }
+    document.body.style.overflow = '';
     return true;
   }
 
@@ -1125,29 +1296,32 @@ function closeTopmostModal() {
     } else {
       printModal.classList.remove('active');
     }
+    document.body.style.overflow = '';
     return true;
   }
 
   const appInfoModal = document.getElementById('appInfoModalOverlay');
   if (appInfoModal && appInfoModal.classList.contains('active')) {
-    appInfoModal.classList.remove('active');
+    hideAppInfoModal();
     return true;
   }
 
   const settingsPanel = document.getElementById('settingsPanel');
   const notifPanel = document.getElementById('notifPanel');
   if ((settingsPanel && settingsPanel.classList.contains('active')) ||
-      (notifPanel && notifPanel.classList.contains('active'))) {
+    (notifPanel && notifPanel.classList.contains('active'))) {
     if (typeof reminderSystem !== 'undefined' && reminderSystem.closeAllSidebars) {
       reminderSystem.closeAllSidebars();
     }
+    document.body.style.overflow = '';
     return true;
   }
 
+  document.body.style.overflow = '';
   return false;
 }
 
-window.handleAppBackButton = function() {
+window.handleAppBackButton = function () {
   return closeTopmostModal();
 };
 
@@ -1156,7 +1330,8 @@ let isHandlingPopState = false;
 function pushModalState(name) {
   try {
     history.pushState({ modalOpen: true, modalName: name }, '');
-  } catch (e) {}
+    document.body.style.overflow = 'hidden';
+  } catch (e) { }
 }
 
 window.addEventListener('popstate', (e) => {
@@ -1170,7 +1345,7 @@ window.addEventListener('popstate', (e) => {
 async function showAddEditModal(caseId = null) {
   caseForm.reset();
   updateDatalists();
-  
+
   const modalTitleEl = document.querySelector('#caseModalOverlay .modal-title span');
 
   if (caseId) {
@@ -1180,7 +1355,7 @@ async function showAddEditModal(caseId = null) {
     if (matched) {
       document.getElementById('caseId').value = matched.id;
       document.getElementById('dateTime').value = matched.dateTime;
-      
+
       const type = matched.entryType || 'case';
       setEntryType(type);
 
@@ -1205,7 +1380,7 @@ async function showAddEditModal(caseId = null) {
     // Preset entry type based on active filter if relevant, otherwise default to case
     const defaultType = state.currentFilter === 'appointment' ? 'appointment' : 'case';
     setEntryType(defaultType);
-    
+
     // Preset current date
     const selectedDateTimeStr = `${state.selectedDateStr}T09:00`;
     document.getElementById('dateTime').value = selectedDateTimeStr;
@@ -1214,7 +1389,7 @@ async function showAddEditModal(caseId = null) {
       caseYearInput.value = getCurrentYearArabic();
     }
   }
-  
+
   resetScrollLocks();
   const sheet = caseModalOverlay.querySelector('.modal-sheet');
   if (sheet) sheet.scrollTop = 0;
@@ -1225,17 +1400,18 @@ async function showAddEditModal(caseId = null) {
 
 function hideAddEditModal() {
   caseModalOverlay.classList.remove('active');
+  document.body.style.overflow = '';
 }
 
 // Submit Form Action
 caseForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  
+
   const id = document.getElementById('caseId').value;
   const entryType = document.getElementById('entryType').value || 'case';
   const dateTime = document.getElementById('dateTime').value; // YYYY-MM-DDTHH:MM
   const dateOnly = dateTime.split('T')[0];
-  
+
   let recordObj = {
     entryType,
     dateTime,
@@ -1283,7 +1459,7 @@ caseForm.addEventListener('submit', async (e) => {
       notes
     };
   }
-  
+
   if (id) {
     recordObj.id = Number(id);
     // Preserving notified status if datetime has not changed
@@ -1295,9 +1471,10 @@ caseForm.addEventListener('submit', async (e) => {
   } else {
     await state.db.addCase(recordObj);
   }
-  
+
   hideAddEditModal();
   calendar.render();
+  syncNativeReminders();
 });
 
 // View Details Modal Handlers
@@ -1306,7 +1483,7 @@ let activeViewingCase = null;
 
 function showViewModal(itemObj) {
   activeViewingCase = itemObj;
-  
+
   const isAppt = itemObj.entryType === 'appointment';
   const titleEl = document.getElementById('viewModalTitle');
   const caseContainer = document.getElementById('viewCaseContainer');
@@ -1314,8 +1491,8 @@ function showViewModal(itemObj) {
   const followUpBtnText = document.getElementById('viewFollowUpBtnText');
 
   if (followUpBtnText) {
-    followUpBtnText.textContent = isAppt 
-      ? 'موعد جديد' 
+    followUpBtnText.textContent = isAppt
+      ? 'موعد جديد'
       : 'موعد / إجراء جديد';
   }
 
@@ -1327,7 +1504,7 @@ function showViewModal(itemObj) {
     // Show appointment details
     titleEl.style.color = '#38bdf8';
     titleEl.innerHTML = '<i class="fa-solid fa-calendar-check" style="color: #38bdf8;"></i> <span>تفاصيل الموعد</span>';
-    
+
     caseContainer.style.display = 'none';
     apptContainer.style.display = 'flex';
 
@@ -1340,7 +1517,7 @@ function showViewModal(itemObj) {
     // Show case details
     titleEl.style.color = 'var(--accent-gold)';
     titleEl.innerHTML = '<i class="fa-solid fa-scale-unbalanced-flip" style="color: var(--accent-gold);"></i> <span>تفاصيل مأمورية الخبير</span>';
-    
+
     apptContainer.style.display = 'none';
     caseContainer.style.display = 'flex';
 
@@ -1352,7 +1529,7 @@ function showViewModal(itemObj) {
     document.getElementById('viewProcedureDetails').textContent = itemObj.procedureDetails || itemObj.procedure || 'لا توجد ملاحظات أو تفاصيل مسجلة';
     document.getElementById('viewCaseDateTime').textContent = formattedDateTime;
   }
-  
+
   resetScrollLocks();
   const sheet = viewModalOverlay.querySelector('.modal-sheet');
   if (sheet) sheet.scrollTop = 0;
@@ -1364,25 +1541,26 @@ function showViewModal(itemObj) {
 function hideViewModal() {
   viewModalOverlay.classList.remove('active');
   activeViewingCase = null;
+  document.body.style.overflow = '';
 }
 
 // Duplicate existing case or appointment to schedule a new procedure without retyping
 function duplicateCaseForNewProcedure(sourceItem) {
   if (!sourceItem) return;
-  
+
   caseForm.reset();
   updateDatalists();
-  
+
   // Set caseId to EMPTY so this will save as a BRAND NEW record, never overwriting the old one!
   document.getElementById('caseId').value = '';
-  
+
   const type = sourceItem.entryType || 'case';
   setEntryType(type);
-  
+
   // Default date: active selected date or today at 10:00
   const defaultDateStr = state.selectedDateStr || calendar.formatDateStr(new Date());
   document.getElementById('dateTime').value = `${defaultDateStr}T10:00`;
-  
+
   const modalTitleEl = document.querySelector('#caseModalOverlay .modal-title span');
 
   if (type === 'case') {
@@ -1391,11 +1569,11 @@ function duplicateCaseForNewProcedure(sourceItem) {
     document.getElementById('caseYear').value = sourceItem.caseYear || '';
     document.getElementById('court').value = sourceItem.court || '';
     document.getElementById('caseType').value = sourceItem.caseType || '';
-    
+
     // Procedure is left blank for the expert to specify the next action
     document.getElementById('procedureType').value = '';
     document.getElementById('procedureDetails').value = '';
-    
+
     if (modalTitleEl) {
       modalTitleEl.textContent = `إجراء جديد للقضية (${sourceItem.caseNumber || ''} / ${sourceItem.caseYear || ''})`;
     }
@@ -1405,19 +1583,19 @@ function duplicateCaseForNewProcedure(sourceItem) {
     document.getElementById('appointmentType').value = sourceItem.appointmentType || '';
     document.getElementById('appointmentLocation').value = sourceItem.location || '';
     document.getElementById('appointmentNotes').value = '';
-    
+
     if (modalTitleEl) {
       modalTitleEl.textContent = `موعد جديد لنفس الموضوع: ${sourceItem.title || ''}`;
     }
   }
-  
+
   resetScrollLocks();
   const sheet = caseModalOverlay.querySelector('.modal-sheet');
   if (sheet) sheet.scrollTop = 0;
-  
+
   caseModalOverlay.classList.add('active');
   pushModalState('addEdit');
-  
+
   // Focus appropriate field
   setTimeout(() => {
     if (type === 'case') {
@@ -1468,6 +1646,7 @@ document.getElementById('confirmOkBtn').addEventListener('click', async () => {
     hideViewModal();
     document.getElementById('confirmModalOverlay').classList.remove('active');
     pendingDeleteId = null;
+    syncNativeReminders();
   }
 });
 
@@ -1495,45 +1674,110 @@ function hideAppInfoModal() {
   if (appInfoModalOverlay) {
     appInfoModalOverlay.classList.remove('active');
   }
+  document.body.style.overflow = '';
 }
 
-// Export Alerts & Case Data Functionality
+// Helper: Unique Fingerprint for Deduplication
+function getRecordFingerprint(item) {
+  if (!item || typeof item !== 'object') return '';
+  const type = item.entryType || 'case';
+  const dt = (item.dateTime || '').trim();
+  if (type === 'appointment') {
+    const title = (item.title || '').trim().toLowerCase();
+    const appType = (item.appointmentType || '').trim().toLowerCase();
+    const loc = (item.location || '').trim().toLowerCase();
+    return `appointment|${title}|${appType}|${loc}|${dt}`;
+  } else {
+    // Legal Case / Mission
+    const num = (item.caseNumber || '').trim();
+    const yr = (item.caseYear || '').trim();
+    const court = (item.court || '').trim().toLowerCase();
+    const proc = (item.procedureType || '').trim().toLowerCase();
+    return `case|${num}|${yr}|${court}|${proc}|${dt}`;
+  }
+}
+
+// Helper: Build Backup Payload
+async function buildBackupPayload() {
+  const allCases = await state.db.getAllCases();
+  const notificationHistory = JSON.parse(localStorage.getItem('notificationHistory') || '[]');
+  const lawsuitTypes = localStorage.getItem('lawsuitTypes') || '';
+  const procedureTypes = localStorage.getItem('procedureTypes') || '';
+  const appointmentTypes = localStorage.getItem('appointmentTypes') || '';
+  const notificationsEnabled = localStorage.getItem('notificationsEnabled') || 'true';
+  const holidayShiftEnabled = localStorage.getItem('holidayShiftEnabled') !== 'false';
+  const theme = localStorage.getItem('appTheme') || state.theme || 'dark';
+  const expertProfile = localStorage.getItem('expertProfile') ? JSON.parse(localStorage.getItem('expertProfile')) : null;
+
+  return {
+    appName: 'LegalAgenda',
+    company: 'LexEnginuity',
+    designer: 'د. م. عمرو مصطفي حامد',
+    version: 'V1.1 (LexEnginuity Edition)',
+    exportedAt: new Date().toISOString(),
+    totalRecordsCount: allCases.length,
+    cases: allCases,
+    notificationHistory: notificationHistory,
+    settings: {
+      lawsuitTypes,
+      procedureTypes,
+      appointmentTypes,
+      courtList: localStorage.getItem('courtList') || '',
+      notificationsEnabled,
+      holidayShiftEnabled,
+      theme,
+      expertProfile
+    }
+  };
+}
+
+// Helper: Generate Standard File Name
+function generateBackupFileName() {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return `legal_agenda_backup_${dateStr}.json`;
+}
+
+// Callback from Android Native when file export completes
+window.onBackupExportResult = function (success, message) {
+  const statusEl = document.getElementById('importExportStatus');
+  if (statusEl) {
+    statusEl.className = success ? 'backup-status success' : 'backup-status error';
+    statusEl.textContent = message || (success ? 'تم حفظ ملف النسخة الاحتياطية بنجاح!' : 'حدث خطأ أثناء حفظ الملف.');
+  }
+};
+
+// 1. Export Alerts & Case Data Functionality (Save to Device)
 async function exportAlertsData() {
   const statusEl = document.getElementById('importExportStatus');
   try {
-    const allCases = await state.db.getAllCases();
-    const notificationHistory = JSON.parse(localStorage.getItem('notificationHistory') || '[]');
-    const lawsuitTypes = localStorage.getItem('lawsuitTypes') || '';
-    const procedureTypes = localStorage.getItem('procedureTypes') || '';
-    const appointmentTypes = localStorage.getItem('appointmentTypes') || '';
-    const notificationsEnabled = localStorage.getItem('notificationsEnabled') || 'true';
+    const payload = await buildBackupPayload();
+    const jsonString = JSON.stringify(payload, null, 2);
+    const fileName = generateBackupFileName();
 
-    const exportPayload = {
-      appName: 'LegalAgenda',
-      company: 'LexEnginuity',
-      designer: 'د. م. عمرو مصطفي حامد',
-      version: 'V0 (LexEnginuity Edition)',
-      exportedAt: new Date().toISOString(),
-      totalRecordsCount: allCases.length,
-      cases: allCases,
-      notificationHistory: notificationHistory,
-      settings: {
-        lawsuitTypes,
-        procedureTypes,
-        appointmentTypes,
-        courtList: localStorage.getItem('courtList') || '',
-        notificationsEnabled
+    // Check if running inside Android Native App with Storage Access Framework Bridge
+    if (window.AndroidBackup && typeof window.AndroidBackup.exportBackup === 'function') {
+      if (statusEl) {
+        statusEl.className = 'backup-status info';
+        statusEl.textContent = 'جاري فتح شاشة حفظ الملف، يرجى اختيار مكان الحفظ...';
       }
-    };
+      window.AndroidBackup.exportBackup(fileName, jsonString);
+      return;
+    }
 
-    const jsonString = JSON.stringify(exportPayload, null, 2);
+    // Check if running inside iOS Native App (WKWebView Bridge)
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iosShareFile) {
+      if (statusEl) {
+        statusEl.className = 'backup-status info';
+        statusEl.textContent = 'جاري حفظ الملف عبر نظام iOS...';
+      }
+      window.webkit.messageHandlers.iosShareFile.postMessage({ fileName: fileName, content: jsonString });
+      return;
+    }
+
+    // Web Browser Fallback (Blob download)
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const fileName = `legal_agenda_backup_${dateStr}.json`;
-
     const a = document.createElement('a');
     a.href = url;
     a.download = fileName;
@@ -1544,7 +1788,7 @@ async function exportAlertsData() {
 
     if (statusEl) {
       statusEl.className = 'backup-status success';
-      statusEl.textContent = `تم تصدير ${allCases.length} مأمورية وموعد بنجاح إلى الملف (${fileName})!`;
+      statusEl.textContent = `تم تصدير ${payload.totalRecordsCount} مأمورية وموعد بنجاح إلى الملف (${fileName})!`;
     }
   } catch (err) {
     console.error('Export failed:', err);
@@ -1555,7 +1799,77 @@ async function exportAlertsData() {
   }
 }
 
-// Import Alerts & Case Data Functionality
+// 2. Share Backup Functionality (WhatsApp, Drive, Email, etc.)
+async function shareBackupData() {
+  const statusEl = document.getElementById('importExportStatus');
+  try {
+    const payload = await buildBackupPayload();
+    const jsonString = JSON.stringify(payload, null, 2);
+    const fileName = generateBackupFileName();
+
+    // A. Android Native Bridge
+    if (window.AndroidBackup && typeof window.AndroidBackup.shareBackup === 'function') {
+      if (statusEl) {
+        statusEl.className = 'backup-status info';
+        statusEl.textContent = 'جاري فتح قائمة المشاركة (واتساب / بريد / تطبيقات أخرى)...';
+      }
+      window.AndroidBackup.shareBackup(fileName, jsonString);
+      return;
+    }
+
+    // B. iOS Native Bridge (WKWebView messageHandler)
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iosShareFile) {
+      window.webkit.messageHandlers.iosShareFile.postMessage({ fileName: fileName, content: jsonString });
+      if (statusEl) {
+        statusEl.className = 'backup-status success';
+        statusEl.textContent = 'تم إرسال الملف لقائمة المشاركة بنظام iOS.';
+      }
+      return;
+    }
+
+    // C. Web Share API (if supported on modern mobile browsers)
+    if (navigator.canShare) {
+      const file = new File([jsonString], fileName, { type: 'application/json' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: 'نسخة احتياطية - أجندة الخبير',
+          text: `نسخة احتياطية من تطبيق أجندة الخبير القضائي تحتوي على ${payload.totalRecordsCount} مأمورية وموعد.`
+        });
+        if (statusEl) {
+          statusEl.className = 'backup-status success';
+          statusEl.textContent = 'تمت مشاركة النسخة الاحتياطية بنجاح!';
+        }
+        return;
+      }
+    }
+
+    // D. Desktop fallback: inform user and download file
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    if (statusEl) {
+      statusEl.className = 'backup-status info';
+      statusEl.textContent = `المتصفح لا يدعم المشاركة المباشرة، تم تنزيل الملف (${fileName}) لمشاركته يدوياً عبر واتساب.`;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') return; // User closed share dialog
+    console.error('Share failed:', err);
+    if (statusEl) {
+      statusEl.className = 'backup-status error';
+      statusEl.textContent = 'حدث خطأ أثناء مشاركة النسخة الاحتياطية.';
+    }
+  }
+}
+
+// 3. Import Alerts & Case Data Functionality (With Deduplication)
 async function importAlertsData(file) {
   const statusEl = document.getElementById('importExportStatus');
   if (!file) return;
@@ -1574,8 +1888,22 @@ async function importAlertsData(file) {
         throw new Error('صيغة ملف التنبيهات غير صحيحة.');
       }
 
+      // Existing records for deduplication
+      const existingCases = await state.db.getAllCases();
+      const seenKeys = new Set(existingCases.map(c => getRecordFingerprint(c)));
+
       let importedCount = 0;
+      let skippedCount = 0;
+
       for (const caseItem of casesToImport) {
+        if (!caseItem || typeof caseItem !== 'object') continue;
+        const fp = getRecordFingerprint(caseItem);
+        if (seenKeys.has(fp)) {
+          skippedCount++;
+          continue;
+        }
+
+        seenKeys.add(fp);
         const itemToSave = { ...caseItem };
         delete itemToSave.id;
         await state.db.addCase(itemToSave);
@@ -1610,6 +1938,21 @@ async function importAlertsData(file) {
         if (data.settings.courtList) {
           localStorage.setItem('courtList', data.settings.courtList);
         }
+        if (data.settings.holidayShiftEnabled !== undefined) {
+          const isShift = data.settings.holidayShiftEnabled !== false && data.settings.holidayShiftEnabled !== 'false';
+          localStorage.setItem('holidayShiftEnabled', String(isShift));
+          state.holidayShiftEnabled = isShift;
+          const holidayShiftToggle = document.getElementById('holidayShiftToggle');
+          if (holidayShiftToggle) {
+            holidayShiftToggle.checked = isShift;
+          }
+        }
+        if (data.settings.theme) {
+          applyTheme(data.settings.theme);
+        }
+        if (data.settings.expertProfile && !localStorage.getItem('expertProfile')) {
+          localStorage.setItem('expertProfile', JSON.stringify(data.settings.expertProfile));
+        }
         updateDatalists();
       }
 
@@ -1617,9 +1960,22 @@ async function importAlertsData(file) {
       await calendar.render();
       reminderSystem.renderHistory();
 
+      // Trigger native reminders synchronization if available
+      if (typeof syncNativeReminders === 'function') {
+        syncNativeReminders();
+      }
+
       if (statusEl) {
         statusEl.className = 'backup-status success';
-        statusEl.textContent = `تم استيراد ${importedCount} مأمورية وموعد بنجاح وإضافتها إلى البرنامج!`;
+        if (importedCount === 0 && skippedCount > 0) {
+          statusEl.textContent = `تم استيراد 0 مأمورية، وتم تجاهل ${skippedCount} موجود مسبقاً (البيانات متطابقة بالفعل).`;
+        } else if (importedCount > 0 && skippedCount > 0) {
+          statusEl.textContent = `تم استيراد ${importedCount} مأمورية جديدة بنجاح، وتم تجاهل ${skippedCount} موجود مسبقاً!`;
+        } else if (importedCount > 0 && skippedCount === 0) {
+          statusEl.textContent = `تم استيراد ${importedCount} مأمورية وموعد بنجاح وإضافتها إلى البرنامج!`;
+        } else {
+          statusEl.textContent = 'الملف المختار لا يحتوي على أي سجلات جديدة.';
+        }
       }
     } catch (err) {
       console.error('Import error:', err);
@@ -1661,14 +2017,6 @@ filterBtns.forEach(btn => {
 const appInfoBtn = document.getElementById('appInfoBtn');
 if (appInfoBtn) appInfoBtn.addEventListener('click', showAppInfoModal);
 
-const sidebarAppInfoBtn = document.getElementById('sidebarAppInfoBtn');
-if (sidebarAppInfoBtn) {
-  sidebarAppInfoBtn.addEventListener('click', () => {
-    reminderSystem.closeAllSidebars();
-    showAppInfoModal();
-  });
-}
-
 const closeInfoBtn = document.getElementById('closeInfoBtn');
 if (closeInfoBtn) closeInfoBtn.addEventListener('click', hideAppInfoModal);
 
@@ -1677,6 +2025,9 @@ if (appInfoModalOverlay) {
     if (e.target === appInfoModalOverlay) hideAppInfoModal();
   });
 }
+
+const shareBackupBtn = document.getElementById('shareBackupBtn');
+if (shareBackupBtn) shareBackupBtn.addEventListener('click', shareBackupData);
 
 const exportAlertsBtn = document.getElementById('exportAlertsBtn');
 if (exportAlertsBtn) exportAlertsBtn.addEventListener('click', exportAlertsData);
@@ -1701,27 +2052,214 @@ const bannerTitle = document.getElementById('bannerTitle');
 const bannerBody = document.getElementById('bannerBody');
 const notifSound = document.getElementById('notifSound');
 
+// Native Reminders Synchronization (Android & iOS Bridge)
+async function syncNativeReminders() {
+  if (!window.AndroidReminders || typeof window.AndroidReminders.syncAll !== 'function') {
+    return;
+  }
+
+  if (!state.notificationsEnabled) {
+    window.AndroidReminders.syncAll('[]');
+    return;
+  }
+
+  try {
+    const allCases = await state.db.getAllCases();
+    const now = Date.now();
+    const reminders = [];
+
+    for (const item of allCases) {
+      if (!item.dateTime) continue;
+      const eventTime = new Date(item.dateTime).getTime();
+      if (isNaN(eventTime)) continue;
+
+      const isAppt = item.entryType === 'appointment';
+      const itemId = Number(item.id) || 0;
+      if (itemId <= 0) continue;
+
+      // 1. Reminder 24 hours beforehand
+      const trigger24h = eventTime - (24 * 60 * 60 * 1000);
+      if (trigger24h > now) {
+        const title24h = isAppt
+          ? `تنبيه: موعد غداً - ${item.title || ''}`
+          : `تنبيه: مأمورية غداً - ملف رقم ${item.caseNumber || ''}`;
+        const body24h = isAppt
+          ? `التصنيف: ${item.appointmentType || 'موعد عام'}${item.location ? ' | المكان: ' + item.location : ''}`
+          : `الجهة: ${item.court || ''} | الإجراء: ${item.procedureType || ''}${item.procedureDetails ? ' - ' + item.procedureDetails : ''}`;
+
+        reminders.push({
+          id: itemId * 10 + 1,
+          triggerAtMillis: trigger24h,
+          title: title24h,
+          body: body24h,
+          caseId: itemId
+        });
+      }
+
+      // 2. Reminder 2 hours beforehand
+      const trigger2h = eventTime - (2 * 60 * 60 * 1000);
+      if (trigger2h > now) {
+        const title2h = isAppt
+          ? `تنبيه: اقتراب موعد بعد ساعتين - ${item.title || ''}`
+          : `تنبيه: اقتراب مأمورية بعد ساعتين - ملف رقم ${item.caseNumber || ''}`;
+        const body2h = isAppt
+          ? `التصنيف: ${item.appointmentType || 'موعد عام'}${item.location ? ' | المكان: ' + item.location : ''}`
+          : `الجهة: ${item.court || ''} | الإجراء: ${item.procedureType || ''}${item.procedureDetails ? ' - ' + item.procedureDetails : ''}`;
+
+        reminders.push({
+          id: itemId * 10 + 2,
+          triggerAtMillis: trigger2h,
+          title: title2h,
+          body: body2h,
+          caseId: itemId
+        });
+      }
+    }
+
+    window.AndroidReminders.syncAll(JSON.stringify(reminders));
+  } catch (e) {
+    console.error('Error syncing native reminders:', e);
+  }
+}
+window.syncNativeReminders = syncNativeReminders;
+
+// Helper to update Native Reminders Status UI in the notifications center
+function updateNativeReminderUI() {
+  const statusBox = document.getElementById('nativeReminderStatusBox');
+  if (!statusBox) return;
+
+  if (!window.AndroidReminders) {
+    statusBox.style.display = 'none';
+    return;
+  }
+
+  statusBox.style.display = 'block';
+
+  // 1. Notification Permission Status
+  const permStatusEl = document.getElementById('notifPermStatus');
+  const grantBtn = document.getElementById('grantNotifPermBtn');
+  const hasPerm = typeof window.AndroidReminders.hasNotificationPermission === 'function'
+    ? window.AndroidReminders.hasNotificationPermission()
+    : true;
+
+  if (permStatusEl && grantBtn) {
+    if (hasPerm) {
+      permStatusEl.textContent = 'مفعّل ✓';
+      permStatusEl.style.color = '#34d399';
+      grantBtn.style.display = 'none';
+    } else {
+      permStatusEl.textContent = 'غير مفعّل';
+      permStatusEl.style.color = '#f87171';
+      grantBtn.style.display = 'inline-block';
+    }
+  }
+
+  // 2. Exact Alarm Status
+  const exactStatusEl = document.getElementById('exactAlarmStatus');
+  const enableExactBtn = document.getElementById('enableExactAlarmBtn');
+  const canExact = typeof window.AndroidReminders.canScheduleExact === 'function'
+    ? window.AndroidReminders.canScheduleExact()
+    : true;
+
+  if (exactStatusEl && enableExactBtn) {
+    if (canExact) {
+      exactStatusEl.textContent = 'دقيق ومحدد ✓';
+      exactStatusEl.style.color = '#34d399';
+      enableExactBtn.style.display = 'none';
+    } else {
+      exactStatusEl.textContent = 'تقريبي';
+      exactStatusEl.style.color = '#fbbf24';
+      enableExactBtn.style.display = 'inline-block';
+    }
+  }
+}
+
+// Global Callback from Android ActivityResult
+window.onNotificationPermissionResult = function (isGranted) {
+  updateNativeReminderUI();
+  if (isGranted) {
+    syncNativeReminders();
+  }
+};
+
 const reminderSystem = {
   init() {
     this.setupUI();
-    this.requestPermission();
-    
-    // Poll checks every 15 seconds
-    this.checkReminders();
-    setInterval(() => this.checkReminders(), 15000);
+
+    if (window.AndroidReminders) {
+      updateNativeReminderUI();
+      // On Android 13+: ask for permission on initial launch if not granted
+      if (typeof window.AndroidReminders.hasNotificationPermission === 'function' && !window.AndroidReminders.hasNotificationPermission()) {
+        window.AndroidReminders.requestNotificationPermission();
+      }
+    } else {
+      this.requestPermission();
+      // Poll checks every 15 seconds only on Web / fallback
+      this.checkReminders();
+      setInterval(() => this.checkReminders(), 15000);
+    }
   },
 
   setupUI() {
     const toggle = document.getElementById('notificationToggle');
-    toggle.checked = state.notificationsEnabled;
-    
-    toggle.addEventListener('change', (e) => {
-      state.notificationsEnabled = e.target.checked;
-      localStorage.setItem('notificationsEnabled', state.notificationsEnabled);
-      if (state.notificationsEnabled) {
-        this.requestPermission();
-      }
-    });
+    if (toggle) {
+      toggle.checked = state.notificationsEnabled;
+
+      toggle.addEventListener('change', (e) => {
+        state.notificationsEnabled = e.target.checked;
+        localStorage.setItem('notificationsEnabled', state.notificationsEnabled);
+        if (state.notificationsEnabled) {
+          if (window.AndroidReminders && typeof window.AndroidReminders.hasNotificationPermission === 'function' && !window.AndroidReminders.hasNotificationPermission()) {
+            window.AndroidReminders.requestNotificationPermission();
+          } else {
+            this.requestPermission();
+          }
+        }
+        syncNativeReminders();
+      });
+    }
+
+    const holidayShiftToggle = document.getElementById('holidayShiftToggle');
+    if (holidayShiftToggle) {
+      holidayShiftToggle.checked = state.holidayShiftEnabled;
+      holidayShiftToggle.addEventListener('change', (e) => {
+        state.holidayShiftEnabled = e.target.checked;
+        localStorage.setItem('holidayShiftEnabled', String(state.holidayShiftEnabled));
+        if (typeof calendar !== 'undefined' && calendar.render) {
+          calendar.render();
+        }
+        if (typeof loadDailyAgenda === 'function') {
+          loadDailyAgenda();
+        }
+      });
+    }
+
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) {
+      themeToggle.checked = state.theme === 'light';
+      applyTheme(state.theme);
+      themeToggle.addEventListener('change', (e) => {
+        applyTheme(e.target.checked ? 'light' : 'dark');
+      });
+    }
+
+    const grantNotifPermBtn = document.getElementById('grantNotifPermBtn');
+    if (grantNotifPermBtn) {
+      grantNotifPermBtn.addEventListener('click', () => {
+        if (window.AndroidReminders && typeof window.AndroidReminders.requestNotificationPermission === 'function') {
+          window.AndroidReminders.requestNotificationPermission();
+        }
+      });
+    }
+
+    const enableExactAlarmBtn = document.getElementById('enableExactAlarmBtn');
+    if (enableExactAlarmBtn) {
+      enableExactAlarmBtn.addEventListener('click', () => {
+        if (window.AndroidReminders && typeof window.AndroidReminders.openExactAlarmSettings === 'function') {
+          window.AndroidReminders.openExactAlarmSettings();
+        }
+      });
+    }
 
     const settingsBtn = document.getElementById('settingsBtn');
     if (settingsBtn) settingsBtn.addEventListener('click', () => this.toggleSettings(true));
@@ -1745,7 +2283,7 @@ const reminderSystem = {
         this.renderHistory();
       });
     }
-    
+
     document.getElementById('bannerClose').addEventListener('click', () => {
       notificationBanner.classList.remove('visible');
     });
@@ -1762,22 +2300,22 @@ const reminderSystem = {
     if (!savedApptTypes || savedApptTypes.includes('اجتماع عمل مع الخصوم') || savedApptTypes.includes('استشارة فنية')) {
       localStorage.setItem('appointmentTypes', DEFAULT_APPOINTMENT_TYPES.join(', '));
     }
-    
+
     const lawsuitTextarea = document.getElementById('settingsLawsuitTypes');
     const procedureTextarea = document.getElementById('settingsProcedureTypes');
     const appointmentTextarea = document.getElementById('settingsAppointmentTypes');
     const courtTextarea = document.getElementById('settingsCourtList');
-    
+
     if (lawsuitTextarea && procedureTextarea) {
       lawsuitTextarea.value = localStorage.getItem('lawsuitTypes');
       procedureTextarea.value = localStorage.getItem('procedureTypes');
-      
+
       // Auto-save settings on input
       lawsuitTextarea.addEventListener('input', (e) => {
         localStorage.setItem('lawsuitTypes', e.target.value);
         updateDatalists();
       });
-      
+
       procedureTextarea.addEventListener('input', (e) => {
         localStorage.setItem('procedureTypes', e.target.value);
         updateDatalists();
@@ -1799,6 +2337,37 @@ const reminderSystem = {
         updateDatalists();
       });
     }
+
+    // Expert Profile setup (بيانات الخبير لتقرير الطباعة)
+    const expertNameInput = document.getElementById('expertName');
+    const expertTitleInput = document.getElementById('expertTitle');
+    const expertOfficeInput = document.getElementById('expertOffice');
+    const expertPhoneInput = document.getElementById('expertPhone');
+
+    const profile = JSON.parse(localStorage.getItem('expertProfile') || '{}');
+    if (expertNameInput) expertNameInput.value = profile.name || '';
+    if (expertTitleInput) expertTitleInput.value = profile.title || '';
+    if (expertOfficeOfficeInput = expertOfficeInput) expertOfficeInput.value = profile.office || '';
+    if (expertPhoneInput) expertPhoneInput.value = profile.phone || '';
+
+    const saveExpertProfile = () => {
+      const p = {
+        name: expertNameInput ? expertNameInput.value.trim() : '',
+        title: expertTitleInput ? expertTitleInput.value.trim() : '',
+        office: expertOfficeInput ? expertOfficeInput.value.trim() : '',
+        phone: expertPhoneInput ? expertPhoneInput.value.trim() : ''
+      };
+      localStorage.setItem('expertProfile', JSON.stringify(p));
+      // Re-render preview if print modal is currently open
+      if (typeof printManager !== 'undefined' && printManager.updatePreview) {
+        printManager.updatePreview();
+      }
+    };
+
+    if (expertNameInput) expertNameInput.addEventListener('input', saveExpertProfile);
+    if (expertTitleInput) expertTitleInput.addEventListener('input', saveExpertProfile);
+    if (expertOfficeInput) expertOfficeInput.addEventListener('input', saveExpertProfile);
+    if (expertPhoneInput) expertPhoneInput.addEventListener('input', saveExpertProfile);
 
     updateDatalists();
     this.renderHistory();
@@ -1832,6 +2401,7 @@ const reminderSystem = {
       const badge = document.getElementById('notifBadge');
       if (badge) badge.classList.remove('visible');
       this.renderHistory();
+      updateNativeReminderUI();
       pushModalState('notifications');
     } else {
       if (notifPanel) notifPanel.classList.remove('active');
@@ -1868,74 +2438,79 @@ const reminderSystem = {
 
   // Reminder Engine checking hearings / appointments 24 hours (1 day) beforehand
   async checkReminders() {
-    if (!state.db.db) return; // DB not loaded yet
-    
-    const cases = await state.db.getAllCases();
-    const now = new Date();
-    const targetDiff = 24 * 60 * 60 * 1000; // 24 hours in ms
-    
-    cases.forEach(async (c) => {
-      if (c.notified) return; // Already triggered reminder
-      
-      const hearingTime = new Date(c.dateTime);
-      const timeDiff = hearingTime.getTime() - now.getTime();
-      
-      // Trigger if event is within target 24 hour window
-      if (timeDiff > 0 && timeDiff <= targetDiff) {
-        await this.triggerAlert(c);
+    if (!state.db.db || this.isChecking) return; // DB not loaded yet or check currently running
+    this.isChecking = true;
+
+    try {
+      const cases = await state.db.getAllCases();
+      const now = new Date();
+      const targetDiff = 24 * 60 * 60 * 1000; // 24 hours in ms
+
+      for (const c of cases) {
+        if (c.notified) continue; // Already triggered reminder
+
+        const hearingTime = new Date(c.dateTime);
+        const timeDiff = hearingTime.getTime() - now.getTime();
+
+        // Trigger if event is within target 24 hour window
+        if (timeDiff > 0 && timeDiff <= targetDiff) {
+          await this.triggerAlert(c);
+        }
       }
-    });
+    } finally {
+      this.isChecking = false;
+    }
   },
 
   async triggerAlert(itemObj) {
     // Mark as notified in Database
     await state.db.markAsNotified(itemObj.id);
-    
+
     // Refresh current states
     state.allCases = await state.db.getAllCases();
-    
+
     // Log in History
     this.logAlert(itemObj);
-    
+
     // Play sound alert
     try {
       notifSound.currentTime = 0;
       notifSound.play();
-    } catch(err) {
+    } catch (err) {
       console.warn('Audio play blocked:', err);
     }
-    
+
     const isAppt = itemObj.entryType === 'appointment';
 
-    // 1. Show Custom sliding Banner
+    // 1. Show Custom sliding Banner (Safe HTML Escaped)
     if (isAppt) {
       bannerTitle.textContent = 'تنبيه: اقتراب موعد هام (خلال ٢٤ ساعة)';
-      bannerBody.innerHTML = `الموعد: <b>${itemObj.title}</b><br>التصنيف: ${itemObj.appointmentType || 'موعد عام'}${itemObj.location ? `<br>المكان: ${itemObj.location}` : ''}`;
+      bannerBody.innerHTML = `الموعد: <b>${escapeHtml(itemObj.title)}</b><br>التصنيف: ${escapeHtml(itemObj.appointmentType || 'موعد عام')}${itemObj.location ? `<br>المكان: ${escapeHtml(itemObj.location)}` : ''}`;
     } else {
       const pType = itemObj.procedureType || 'إجراء مطلوب';
       const pDetails = itemObj.procedureDetails || itemObj.procedure || '';
       bannerTitle.textContent = 'تنبيه: اقتراب موعد المأمورية (خلال ٢٤ ساعة)';
-      bannerBody.innerHTML = `ملف رقم: <b>${itemObj.caseNumber}</b><br>الجهة: ${itemObj.court}<br>الإجراء: <b>${pType}</b> - ${pDetails}`;
+      bannerBody.innerHTML = `ملف رقم: <b>${escapeHtml(itemObj.caseNumber)}</b><br>الجهة: ${escapeHtml(itemObj.court)}<br>الإجراء: <b>${escapeHtml(pType)}</b>${pDetails ? ' - ' + escapeHtml(pDetails) : ''}`;
     }
 
     notificationBanner.classList.add('visible');
-    
+
     // Autoclose custom banner after 10 seconds
     setTimeout(() => {
       notificationBanner.classList.remove('visible');
     }, 10000);
-    
+
     // Update red dot icon on the dashboard
     document.getElementById('notifBadge').classList.add('visible');
 
     // 2. Trigger System Level OS Web Notification
     if (state.notificationsEnabled && 'Notification' in window && Notification.permission === 'granted') {
       const notifTitle = isAppt ? `تنبيه موعد قادم: ${itemObj.title}` : `مأمورية قادمة غداً: ملف رقم ${itemObj.caseNumber}`;
-      const notifBody = isAppt 
+      const notifBody = isAppt
         ? `التصنيف: ${itemObj.appointmentType || 'موعد عام'}\nالمكان: ${itemObj.location || 'غير محدد'}\nالتوقيت: ${formatArabicTime(itemObj.dateTime)}`
         : `الجهة المحيلة: ${itemObj.court}\nنوع الإجراء: ${itemObj.procedureType || 'إجراء'}\nالتفاصيل: ${itemObj.procedureDetails || itemObj.procedure || ''}`;
-      
-      if (state.swRegistration) {
+
+      if (state.swRegistration && state.swRegistration.active) {
         state.swRegistration.active.postMessage({
           type: 'SHOW_NOTIFICATION',
           payload: {
@@ -1944,7 +2519,7 @@ const reminderSystem = {
             data: { caseId: itemObj.id }
           }
         });
-      } else {
+      } else if (!window.AndroidReminders) {
         new Notification(notifTitle, {
           body: notifBody,
           icon: 'assets/icon.png',
@@ -1967,7 +2542,7 @@ const reminderSystem = {
       procedureDetails: isAppt ? (itemObj.notes || '') : (itemObj.procedureDetails || itemObj.procedure || ''),
       timestamp: new Date().toISOString()
     };
-    
+
     logs.unshift(newLog); // Prepend to history
     localStorage.setItem('notificationHistory', JSON.stringify(logs.slice(0, 15))); // Keep last 15
     this.renderHistory();
@@ -1976,7 +2551,7 @@ const reminderSystem = {
   renderHistory() {
     const list = document.getElementById('notifHistory');
     const logs = JSON.parse(localStorage.getItem('notificationHistory') || '[]');
-    
+
     if (logs.length === 0) {
       list.innerHTML = `
         <div class="empty-state" style="padding: 15px; border-radius: 10px;">
@@ -1986,13 +2561,13 @@ const reminderSystem = {
       `;
       return;
     }
-    
+
     list.innerHTML = '';
     logs.forEach(log => {
       const date = new Date(log.timestamp);
       const options = { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
       const timeStr = new Intl.DateTimeFormat('ar-EG', options).format(date);
-      
+
       const isAppt = log.entryType === 'appointment';
       const labelText = isAppt ? 'موعد' : 'مأمورية ملف رقم';
 
@@ -2000,9 +2575,9 @@ const reminderSystem = {
       item.className = 'notif-history-item';
       item.innerHTML = `
         <div class="notif-time"><i class="fa-regular fa-clock"></i> ${timeStr}</div>
-        <div>تنبيه ${labelText}: <b>${log.caseNumber}</b> ${log.court ? `(${log.court})` : ''}</div>
+        <div>تنبيه ${labelText}: <b>${escapeHtml(log.caseNumber)}</b> ${log.court ? `(${escapeHtml(log.court)})` : ''}</div>
         <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 4px; border-top: 1px dashed rgba(255,255,255,0.04); padding-top: 4px;">
-          التصنيف: <b>${log.procedureType}</b> ${log.procedureDetails ? `- ${log.procedureDetails}` : ''}
+          التصنيف: <b>${escapeHtml(log.procedureType)}</b> ${log.procedureDetails ? `- ${escapeHtml(log.procedureDetails)}` : ''}
         </div>
       `;
       list.appendChild(item);
@@ -2085,13 +2660,12 @@ const searchController = {
     const searchInput = document.getElementById('searchInput');
     if (!searchModalOverlay) return;
 
-    resetScrollLocks();
     const sheet = searchModalOverlay.querySelector('.search-modal-sheet');
     if (sheet) sheet.scrollTop = 0;
 
     searchModalOverlay.classList.add('active');
     pushModalState('search');
-    
+
     // Ensure all cases are loaded
     state.allCases = await state.db.getAllCases();
 
@@ -2106,7 +2680,7 @@ const searchController = {
             if (window.innerWidth > 600) {
               searchInput.focus();
             }
-          } catch (e) {}
+          } catch (e) { }
         }
       }, 350);
     }
@@ -2117,6 +2691,7 @@ const searchController = {
   hide() {
     const searchModalOverlay = document.getElementById('searchModalOverlay');
     if (searchModalOverlay) searchModalOverlay.classList.remove('active');
+    document.body.style.overflow = '';
   },
 
   // Arabic normalizer for search matching
@@ -2176,8 +2751,8 @@ const searchController = {
     // Update filter counts based on matched items
     const countAll = matched.length;
     const countUpcoming = matched.filter(c => c.dateOnly >= todayStr).length;
-    const countCases = matched.filter(c => c.entryType === 'case').length;
-    const countAppts = matched.filter(c => c.entryType === 'appointment').length;
+    const countCases = matched.filter(c => getEntryType(c) === 'case').length;
+    const countAppts = matched.filter(c => getEntryType(c) === 'appointment').length;
 
     const elCountAll = document.getElementById('searchCountAll');
     const elCountUpcoming = document.getElementById('searchCountUpcoming');
@@ -2193,9 +2768,9 @@ const searchController = {
     if (this.currentFilter === 'upcoming') {
       matched = matched.filter(c => c.dateOnly >= todayStr);
     } else if (this.currentFilter === 'case') {
-      matched = matched.filter(c => c.entryType === 'case');
+      matched = matched.filter(c => getEntryType(c) === 'case');
     } else if (this.currentFilter === 'appointment') {
-      matched = matched.filter(c => c.entryType === 'appointment');
+      matched = matched.filter(c => getEntryType(c) === 'appointment');
     }
 
     // Sort items:
@@ -2221,7 +2796,7 @@ const searchController = {
           <i class="fa-solid fa-magnifying-glass-chart" style="font-size: 2.2rem; color: var(--text-muted); margin-bottom: 12px;"></i>
           <h4 style="font-size: 0.95rem; color: var(--text-primary); margin-bottom: 6px;">لا توجد نتائج مطابقة</h4>
           <p style="font-size: 0.78rem; color: var(--text-muted); max-width: 280px; margin: 0 auto;">
-            ${normQuery ? `لم يتم العثور على أي مأموريات أو مواعيد تطابق "${query}"` : 'لا توجد مواعيد مسجلة في الأجندة حالياً'}
+            ${normQuery ? `لم يتم العثور على أي مأموريات أو مواعيد تطابق "${escapeHtml(query)}"` : 'لا توجد مواعيد مسجلة في الأجندة حالياً'}
           </p>
         </div>
       `;
@@ -2230,13 +2805,13 @@ const searchController = {
 
     if (resultsMeta && countText) {
       resultsMeta.style.display = 'flex';
-      countText.textContent = normQuery 
+      countText.textContent = normQuery
         ? `وجدت ${matched.length} نتيجة مطابقة لـ "${query}"`
         : `إجمالي المسجل بالأجندة: ${matched.length} مأمورية وموعد`;
     }
 
     matched.forEach(item => {
-      const isCase = item.entryType === 'case';
+      const isCase = getEntryType(item) === 'case';
       const isToday = item.dateOnly === todayStr;
       const isUpcoming = item.dateOnly > todayStr;
       const timeStr = formatArabicTime(item.dateTime);
@@ -2260,7 +2835,7 @@ const searchController = {
           const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
           arabicDateStr = new Intl.DateTimeFormat('ar-EG', options).format(d);
         }
-      } catch (err) {}
+      } catch (err) { }
 
       // Card Element
       const card = document.createElement('div');
@@ -2364,17 +2939,52 @@ const searchController = {
   },
 
   highlight(text, query) {
-    if (!text) return '';
-    if (!query) return String(text);
-    const normText = this.normalize(text);
-    const normQuery = this.normalize(query);
-    const idx = normText.indexOf(normQuery);
-    if (idx === -1) return String(text);
+    if (!text && text !== 0) return '';
+    const rawStr = String(text);
+    if (!query) return escapeHtml(rawStr);
 
-    const originalMatch = String(text).substr(idx, query.length);
-    const before = String(text).substr(0, idx);
-    const after = String(text).substr(idx + query.length);
-    return `${before}<span class="search-highlight">${originalMatch}</span>${after}`;
+    const normQuery = this.normalize(query).trim();
+    if (!normQuery) return escapeHtml(rawStr);
+
+    // Build character-by-character normalized text and map each normalized char index back to original string index
+    const normChars = [];
+    const origIndexMap = []; // origIndexMap[normIdx] = origCharIdx
+    for (let i = 0; i < rawStr.length; i++) {
+      const ch = rawStr[i];
+      // Skip Arabic diacritics
+      if (/[\u064B-\u065F]/.test(ch)) {
+        continue;
+      }
+      let nch = ch.toLowerCase();
+      if (/[أإآ]/.test(nch)) nch = 'ا';
+      else if (/[ة]/.test(nch)) nch = 'ه';
+      else if (/[ى]/.test(nch)) nch = 'ي';
+      else if (/[٠-٩]/.test(nch)) nch = String('٠١٢٣٤٥٦٧٨٩'.indexOf(nch));
+
+      normChars.push(nch);
+      origIndexMap.push(i);
+    }
+
+    const normText = normChars.join('');
+    const matchStart = normText.indexOf(normQuery);
+    if (matchStart === -1) {
+      return escapeHtml(rawStr);
+    }
+
+    const matchEnd = matchStart + normQuery.length - 1;
+    const origStart = origIndexMap[matchStart];
+    let origEnd = origIndexMap[matchEnd] + 1;
+
+    // Include any trailing Arabic diacritics attached to the final matched character
+    while (origEnd < rawStr.length && /[\u064B-\u065F]/.test(rawStr[origEnd])) {
+      origEnd++;
+    }
+
+    const before = rawStr.slice(0, origStart);
+    const match = rawStr.slice(origStart, origEnd);
+    const after = rawStr.slice(origEnd);
+
+    return `${escapeHtml(before)}<span class="search-highlight">${escapeHtml(match)}</span>${escapeHtml(after)}`;
   },
 
   async navigateToItem(item) {
@@ -2401,7 +3011,6 @@ const searchController = {
 
     // 6. Scroll smoothly INSIDE <main> container to the agenda section and pulse the target card
     setTimeout(() => {
-      resetScrollLocks();
       const mainEl = document.querySelector('main');
       const targetCard = document.querySelector(`.case-card[data-id="${item.id}"]`);
       if (mainEl && targetCard) {
@@ -2419,7 +3028,6 @@ const searchController = {
           mainEl.scrollTo({ top: Math.max(0, agendaSection.offsetTop - 15), behavior: 'smooth' });
         }
       }
-      resetScrollLocks();
     }, 280);
   }
 };
@@ -2519,19 +3127,38 @@ const printManager = {
     if (executePrintBtn) {
       executePrintBtn.addEventListener('click', () => this.executePrint());
     }
+
+    // Open Settings from Print Warning Banner
+    const openSettingsFromPrintBtn = document.getElementById('openSettingsFromPrintBtn');
+    if (openSettingsFromPrintBtn) {
+      openSettingsFromPrintBtn.addEventListener('click', () => {
+        this.closeModal();
+        reminderSystem.toggleSettings(true);
+      });
+    }
   },
 
   async openModal(preset = 'month') {
     const modal = document.getElementById('printModalOverlay');
     if (!modal) return;
 
-    resetScrollLocks();
     const sheet = modal.querySelector('.modal-sheet');
     if (sheet) sheet.scrollTop = 0;
 
     modal.classList.add('active');
     pushModalState('print');
     state.allCases = await state.db.getAllCases();
+
+    // Check if expert profile name is empty
+    const profile = JSON.parse(localStorage.getItem('expertProfile') || '{}');
+    const warningEl = document.getElementById('printProfileWarning');
+    if (warningEl) {
+      if (!profile.name || !profile.name.trim()) {
+        warningEl.style.display = 'flex';
+      } else {
+        warningEl.style.display = 'none';
+      }
+    }
 
     // Default preset
     const presetButtons = document.querySelectorAll('#printPresetButtons .preset-btn');
@@ -2547,6 +3174,7 @@ const printManager = {
   closeModal() {
     const modal = document.getElementById('printModalOverlay');
     if (modal) modal.classList.remove('active');
+    document.body.style.overflow = '';
   },
 
   hide() {
@@ -2558,7 +3186,7 @@ const printManager = {
     const printEndDate = document.getElementById('printEndDate');
     if (!printStartDate || !printEndDate) return;
 
-    const baseDate = state.selectedDateStr ? new Date(state.selectedDateStr) : new Date();
+    const baseDate = state.selectedDateStr ? parseLocalDate(state.selectedDateStr) : new Date();
     const year = baseDate.getFullYear();
     const month = baseDate.getMonth(); // 0-based
 
@@ -2616,8 +3244,8 @@ const printManager = {
       if (c.dateOnly < startDate || c.dateOnly > endDate) return false;
 
       // Type check
-      if (this.activeType === 'case' && c.entryType !== 'case') return false;
-      if (this.activeType === 'appointment' && c.entryType !== 'appointment') return false;
+      if (this.activeType === 'case' && getEntryType(c) !== 'case') return false;
+      if (this.activeType === 'appointment' && getEntryType(c) !== 'appointment') return false;
 
       return true;
     }).sort((a, b) => {
@@ -2633,12 +3261,12 @@ const printManager = {
     const startDate = document.getElementById('printStartDate')?.value || '';
     const endDate = document.getElementById('printEndDate')?.value || '';
 
-    const caseCount = items.filter(c => c.entryType === 'case').length;
-    const apptCount = items.filter(c => c.entryType === 'appointment').length;
+    const caseCount = items.filter(c => getEntryType(c) === 'case').length;
+    const apptCount = items.filter(c => getEntryType(c) === 'appointment').length;
 
     if (summaryText) {
       if (items.length === 0) {
-        summaryText.innerHTML = `لا توجد أي مأموريات أو مواعيد مسجلة في الفترة المحددة (${startDate} إلى ${endDate})`;
+        summaryText.innerHTML = `لا توجد أي مأموريات أو مواعيد مسجلة في الفترة المحددة (${escapeHtml(startDate)} إلى ${escapeHtml(endDate)})`;
         summaryText.style.color = '#f87171';
       } else {
         summaryText.innerHTML = `تم حصر <b>${items.length}</b> بند في الفترة المحددة (<b>${caseCount}</b> مأمورية قضائية • <b>${apptCount}</b> موعد آخر)`;
@@ -2652,8 +3280,8 @@ const printManager = {
   },
 
   generateReportHtml(items, startDate, endDate, isPreview = false) {
-    const caseCount = items.filter(c => c.entryType === 'case').length;
-    const apptCount = items.filter(c => c.entryType === 'appointment').length;
+    const caseCount = items.filter(c => getEntryType(c) === 'case').length;
+    const apptCount = items.filter(c => getEntryType(c) === 'appointment').length;
 
     let typeScopeText = 'جميع المأموريات القضائية والمواعيد الأخرى';
     if (this.activeType === 'case') typeScopeText = 'المأموريات القضائية فقط';
@@ -2663,18 +3291,20 @@ const printManager = {
     const formatAr = (dateStr) => {
       if (!dateStr) return '';
       try {
-        const parts = dateStr.split('-');
-        if (parts.length === 3) {
-          const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-          return new Intl.DateTimeFormat('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(d);
-        }
-        return dateStr;
+        const d = parseLocalDate(dateStr);
+        return new Intl.DateTimeFormat('ar-EG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(d);
       } catch (e) {
         return dateStr;
       }
     };
 
     const todayAr = new Intl.DateTimeFormat('ar-EG', { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }).format(new Date());
+
+    const profile = JSON.parse(localStorage.getItem('expertProfile') || '{}');
+    const expertName = (profile.name || '').trim() || '................';
+    const expertTitle = (profile.title || '').trim() || 'خبير بوزارة العدل';
+    const expertOffice = (profile.office || '').trim();
+    const expertPhone = (profile.phone || '').trim();
 
     let rowsHtml = '';
     if (items.length === 0) {
@@ -2708,30 +3338,31 @@ const printManager = {
         const dateFormatted = formatAr(group.dateKey);
 
         group.items.forEach((item, idxInGroup) => {
-          const isCase = item.entryType === 'case';
+          const isCase = getEntryType(item) === 'case';
           const timeFormatted = formatArabicTime(item.dateTime);
 
-          const titleOrCase = isCase 
-            ? `<b>ملف: ${item.caseNumber || '—'} / ${item.caseYear || ''}</b><div style="font-size: 8pt; color: #475569;">${item.caseType || ''}</div>`
-            : `<b>${item.title || 'موعد عام'}</b><div style="font-size: 8pt; color: #475569;">${item.appointmentType || ''}</div>`;
+          const titleOrCase = isCase
+            ? `<b>ملف: ${escapeHtml(item.caseNumber) || '—'} / ${escapeHtml(item.caseYear) || ''}</b><div style="font-size: 8pt; color: #475569;">${escapeHtml(item.caseType) || ''}</div>`
+            : `<b>${escapeHtml(item.title) || 'موعد عام'}</b><div style="font-size: 8pt; color: #475569;">${escapeHtml(item.appointmentType) || ''}</div>`;
 
           const courtOrLoc = isCase
-            ? `<b>${item.court || '—'}</b>`
-            : `${item.location || '—'}`;
+            ? `<b>${escapeHtml(item.court) || '—'}</b>`
+            : `${escapeHtml(item.location) || '—'}`;
 
+          const procDetails = item.procedureDetails || item.procedure || '';
           const procOrNotes = isCase
-            ? `<b>${item.procedureType || ''}</b>${item.procedureDetails || item.procedure ? `<div>${item.procedureDetails || item.procedure}</div>` : ''}`
-            : `${item.notes || '—'}`;
+            ? `<b>${escapeHtml(item.procedureType) || ''}</b>${procDetails ? `<div>${escapeHtml(procDetails)}</div>` : ''}`
+            : `${escapeHtml(item.notes) || '—'}`;
 
-          const dateCellHtml = idxInGroup === 0 
-            ? `<td class="text-center group-date-cell" rowspan="${groupLen}"><b>${dateFormatted}</b></td>`
+          const dateCellHtml = idxInGroup === 0
+            ? `<td class="text-center group-date-cell" rowspan="${groupLen}"><b>${escapeHtml(dateFormatted)}</b></td>`
             : '';
 
           rowsHtml += `
             <tr>
               <td class="text-center" style="font-weight: bold;">${seqIndex++}</td>
               ${dateCellHtml}
-              <td class="text-center" style="direction: ltr; font-weight: 600;">${timeFormatted}</td>
+              <td class="text-center" style="direction: ltr; font-weight: 600;">${escapeHtml(timeFormatted)}</td>
               <td>${titleOrCase}</td>
               <td>${courtOrLoc}</td>
               <td>${procOrNotes}</td>
@@ -2754,15 +3385,17 @@ const printManager = {
             <div class="header-emblem">⚖️</div>
             <h2>جدول أعمال الخبير القضائي</h2>
             <div class="report-period-text">
-              الفترة من: <b>${startDate}</b> إلى: <b>${endDate}</b>
+              الفترة من: <b>${escapeHtml(startDate)}</b> إلى: <b>${escapeHtml(endDate)}</b>
             </div>
-            <div class="report-scope-tag">${typeScopeText}</div>
+            <div class="report-scope-tag">${escapeHtml(typeScopeText)}</div>
           </div>
 
           <div class="header-meta-block">
-            <p><b>الخبير:</b> د. م. عمرو مصطفي حامد</p>
-            <p><b>الصفة:</b> خبير هندسي بوزارة العدل</p>
-            <p><b>تاريخ الاستخراج:</b> ${todayAr}</p>
+            <p><b>الخبير:</b> ${escapeHtml(expertName)}</p>
+            <p><b>الصفة:</b> ${escapeHtml(expertTitle)}</p>
+            ${expertOffice ? `<p><b>المكتب/الإدارة:</b> ${escapeHtml(expertOffice)}</p>` : ''}
+            ${expertPhone ? `<p><b>الهاتف:</b> ${escapeHtml(expertPhone)}</p>` : ''}
+            <p><b>تاريخ الاستخراج:</b> ${escapeHtml(todayAr)}</p>
           </div>
         </div>
 
@@ -2826,12 +3459,18 @@ const printManager = {
 
     // Give browser brief time to layout HTML
     setTimeout(() => {
-      // Check if running on Android WebView Bridge
+      // 1. Check if running on iOS Native WKWebView Bridge
+      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iosPrint) {
+        window.webkit.messageHandlers.iosPrint.postMessage({});
+        return;
+      }
+
+      // 2. Check if running on Android WebView Bridge
       if (window.AndroidPrinter && typeof window.AndroidPrinter.printPage === 'function') {
         const jobName = `جدول_أعمال_الخبير_${startDate}_${endDate}`;
         window.AndroidPrinter.printPage(jobName);
       } else {
-        // Standard window.print for Desktop Web and iOS Safari / WKWebView
+        // Standard window.print for Desktop Web and browsers
         window.print();
       }
     }, 150);
@@ -2845,38 +3484,57 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Initialize Database
   try {
     await state.db.init();
-    
+    state.allCases = await state.db.getAllCases();
+
+    // Migrate expert profile once for existing users with prior data
+    if (!localStorage.getItem('expertProfile') && state.allCases && state.allCases.length > 0) {
+      const defaultProfile = {
+        name: 'د. م. عمرو مصطفي حامد',
+        title: 'خبير هندسي بوزارة العدل',
+        office: '',
+        phone: ''
+      };
+      localStorage.setItem('expertProfile', JSON.stringify(defaultProfile));
+      const expertNameInput = document.getElementById('expertName');
+      const expertTitleInput = document.getElementById('expertTitle');
+      if (expertNameInput) expertNameInput.value = defaultProfile.name;
+      if (expertTitleInput) expertTitleInput.value = defaultProfile.title;
+    }
+
     // Initialize components
     calendar.init();
     updateAgendaTitle(calendar.formatDateStr(state.currentDate));
     reminderSystem.init();
     searchController.init();
     printManager.init();
-    
+
+    // Sync native alarms / reminders with Android system
+    syncNativeReminders();
+
   } catch (error) {
     console.error('App init failed:', error);
   }
-  
+
   // Register Service Worker
   if ('serviceWorker' in navigator) {
     try {
       state.swRegistration = await navigator.serviceWorker.register('sw.js');
       console.log('Service Worker registered successfully');
-      
+
       // Check for incoming parameters (caseId from notification click)
       const urlParams = new URLSearchParams(window.location.search);
       const caseId = urlParams.get('caseId');
       if (caseId) {
         navigateToSpecificCase(caseId);
       }
-      
+
       // Listen for messages from service worker
       navigator.serviceWorker.addEventListener('message', (event) => {
         if (event.data && event.data.type === 'NAVIGATE_TO_CASE') {
           navigateToSpecificCase(event.data.caseId);
         }
       });
-      
+
     } catch (e) {
       console.warn('Service Worker registration failed:', e);
     }
@@ -2890,7 +3548,7 @@ async function navigateToSpecificCase(caseId) {
     setTimeout(() => navigateToSpecificCase(caseId), 100);
     return;
   }
-  
+
   const all = await state.db.getAllCases();
   const matched = all.find(c => c.id === Number(caseId));
   if (matched) {
@@ -2898,13 +3556,14 @@ async function navigateToSpecificCase(caseId) {
     const hearingDate = new Date(matched.dateTime);
     state.currentDate = new Date(hearingDate.getFullYear(), hearingDate.getMonth(), 1);
     state.selectedDateStr = calendar.formatDateStr(hearingDate);
-    
+
     // Render and show
     await calendar.render();
     updateAgendaTitle(state.selectedDateStr);
     showViewModal(matched);
   }
 }
+window.navigateToSpecificCase = navigateToSpecificCase;
 
 // ==========================================
 // 5. GOOGLE CALENDAR (ANDROID PROVIDER) SYNC
@@ -2928,7 +3587,8 @@ function syncHolidaysFromAndroidCalendar(silent = false) {
   if (window.AndroidCalendar && typeof window.AndroidCalendar.isAvailable === 'function') {
     if (window.AndroidCalendar.hasPermission()) {
       try {
-        const jsonStr = window.AndroidCalendar.getHolidays(2025, 2027);
+        const currentYear = new Date().getFullYear();
+        const jsonStr = window.AndroidCalendar.getHolidays(currentYear - 1, currentYear + 2);
         if (jsonStr && jsonStr !== '{}') {
           const rawParsed = JSON.parse(jsonStr);
           const normalized = {};
@@ -2960,7 +3620,7 @@ function syncHolidaysFromAndroidCalendar(silent = false) {
   }
 }
 
-window.onCalendarPermissionResult = function(isGranted) {
+window.onCalendarPermissionResult = function (isGranted) {
   if (isGranted) {
     syncHolidaysFromAndroidCalendar(false);
   } else {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'legal-agenda-cache-v17'; // Single-row 3-action buttons layout in view modal
+const CACHE_NAME = 'legal-agenda-cache-v29'; // Complete 100% Offline with local fonts, fontawesome & audio
 const ASSETS = [
   './',
   './index.html',
@@ -6,7 +6,28 @@ const ASSETS = [
   './app.js',
   './manifest.json',
   './assets/icon.png',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
+  './assets/designer.jpg',
+  './assets/lexenginuity-logo.jpg',
+  './assets/sounds/chime.wav',
+  './assets/fonts/fonts.css',
+  './assets/fonts/cairo-arabic-400-normal.woff2',
+  './assets/fonts/cairo-arabic-500-normal.woff2',
+  './assets/fonts/cairo-arabic-600-normal.woff2',
+  './assets/fonts/cairo-arabic-700-normal.woff2',
+  './assets/fonts/cairo-arabic-800-normal.woff2',
+  './assets/fonts/cairo-latin-400-normal.woff2',
+  './assets/fonts/cairo-latin-500-normal.woff2',
+  './assets/fonts/cairo-latin-600-normal.woff2',
+  './assets/fonts/cairo-latin-700-normal.woff2',
+  './assets/fonts/cairo-latin-800-normal.woff2',
+  './assets/fonts/outfit-latin-400-normal.woff2',
+  './assets/fonts/outfit-latin-500-normal.woff2',
+  './assets/fonts/outfit-latin-600-normal.woff2',
+  './assets/fonts/outfit-latin-700-normal.woff2',
+  './assets/vendor/fontawesome/css/all.min.css',
+  './assets/vendor/fontawesome/webfonts/fa-solid-900.woff2',
+  './assets/vendor/fontawesome/webfonts/fa-regular-400.woff2',
+  './assets/vendor/fontawesome/webfonts/fa-brands-400.woff2'
 ];
 
 // Install Event

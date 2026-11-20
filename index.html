@@ -14,9 +14,18 @@
   <link rel="icon" type="image/png" href="assets/icon.png">
   <link rel="apple-touch-icon" href="assets/icon.png">
   
-  <!-- FontAwesome Icons & Stylesheet -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- FontAwesome Icons & Local Cairo/Outfit Fonts -->
+  <link rel="stylesheet" href="assets/vendor/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="assets/fonts/fonts.css">
   <link rel="stylesheet" href="styles.css">
+
+  <!-- Immediate Theme Initialization (Prevents flash of dark mode) -->
+  <script>
+    (function () {
+      var savedTheme = localStorage.getItem('appTheme') || 'dark';
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    })();
+  </script>
 </head>
 <body>
 
@@ -157,6 +166,32 @@
         </label>
       </div>
 
+      <!-- Native Reminders Status (Android) -->
+      <div id="nativeReminderStatusBox" style="display: none; margin-bottom: 12px; padding: 10px 12px; background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 0.76rem; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-shield-halved" style="color: var(--accent-gold);"></i> إذن الإشعارات:
+          </span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span id="notifPermStatus" style="font-size: 0.74rem; font-weight: 700;">مفعل</span>
+            <button type="button" id="grantNotifPermBtn" style="display: none; padding: 3px 8px; font-size: 0.7rem; background: var(--accent-blue); color: #fff; border-radius: 6px; border: none; cursor: pointer;">
+              منح الإذن
+            </button>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 0.76rem; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-stopwatch" style="color: var(--accent-gold);"></i> دقة التنبيه:
+          </span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span id="exactAlarmStatus" style="font-size: 0.74rem; font-weight: 700;">دقيق</span>
+            <button type="button" id="enableExactAlarmBtn" style="display: none; padding: 3px 8px; font-size: 0.7rem; background: var(--accent-gold); color: #090d16; font-weight: 700; border-radius: 6px; border: none; cursor: pointer;">
+              تفعيل التنبيه الدقيق
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div style="border-top: 1.5px solid rgba(255,255,255,0.06); padding-top: 15px; margin-top: 8px; flex: 1; display: flex; flex-direction: column;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
           <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
@@ -190,6 +225,21 @@
         </div>
       </div>
 
+      <!-- Theme Switch (المظهر الداكن / الفاتح) -->
+      <div class="setting-option" style="margin-bottom: 6px;">
+        <div class="setting-info">
+          <span class="setting-label" style="display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-moon" id="themeIcon" style="color: var(--accent-blue);"></i>
+            <span id="themeLabelText">المظهر النهاري</span>
+          </span>
+          <span class="setting-desc" id="themeDescText">التبديل بين المظهر الفاتح والداكن للتطبيق</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="themeToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+
       <!-- Google Calendar Sync Option -->
       <div class="setting-option" style="flex-direction: column; align-items: stretch; gap: 8px;">
         <div class="setting-info" style="display: flex; justify-content: space-between; align-items: center;">
@@ -204,6 +254,53 @@
         <button type="button" id="syncCalendarBtn" class="btn btn-secondary" style="font-size: 0.78rem; padding: 8px 12px; gap: 6px; width: 100%; justify-content: center; background: rgba(66, 133, 244, 0.08); border-color: rgba(66, 133, 244, 0.25); color: #93c5fd;">
           <i class="fa-solid fa-arrows-rotate"></i> مزامنة الإجازات من تقويم الهاتف الآن
         </button>
+      </div>
+
+      <!-- Holiday Shift Toggle (قرار مجلس الوزراء بترحيل الإجازات للخميس) -->
+      <div class="setting-option" style="border-top: 1.5px solid rgba(255,255,255,0.06); padding-top: 15px; margin-top: 8px;">
+        <div class="setting-info">
+          <span class="setting-label">ترحيل الإجازات ليوم الخميس</span>
+          <span class="setting-desc">وفق قرار مجلس الوزراء رقم ١٢٤٩ لسنة ٢٠٢٠ (ترحيل إجازات منتصف الأسبوع للخميس)</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="holidayShiftToggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <!-- Expert Profile Section (بيانات الخبير لتقارير الطباعة) -->
+      <div style="border-top: 1.5px solid rgba(255,255,255,0.06); padding-top: 15px; margin-top: 8px;">
+        <h4 style="font-size: 0.85rem; color: var(--accent-gold); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-user-tie"></i> بيانات الخبير (للتقارير والطباعة)
+        </h4>
+
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label for="expertName" style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">
+            الاسم الكامل
+          </label>
+          <input type="text" id="expertName" style="font-size: 0.8rem; height: 36px; padding: 6px 10px;" placeholder="مثال: د. م. عمرو مصطفي حامد">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label for="expertTitle" style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">
+            الصفة / التخصص
+          </label>
+          <input type="text" id="expertTitle" style="font-size: 0.8rem; height: 36px; padding: 6px 10px;" placeholder="مثال: خبير هندسي بوزارة العدل">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label for="expertOffice" style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">
+            المكتب / الإدارة التابع لها
+          </label>
+          <input type="text" id="expertOffice" style="font-size: 0.8rem; height: 36px; padding: 6px 10px;" placeholder="مثال: مكتب خبراء دمنهور">
+        </div>
+
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label for="expertPhone" style="font-size: 0.72rem; color: var(--text-secondary); margin-bottom: 4px; display: block;">
+            رقم الهاتف للتواصل (اختياري)
+          </label>
+          <input type="tel" id="expertPhone" style="font-size: 0.8rem; height: 36px; padding: 6px 10px;" placeholder="مثال: 01xxxxxxxxx">
+        </div>
       </div>
 
       <!-- Combobox Dropdown Lists Customization Section -->
@@ -248,20 +345,6 @@
             يمكنك إضافة أو حذف أي تصنيف بحرية بالفصل بينها بفاصلة (,)
           </small>
         </div>
-      </div>
-
-      <div style="margin-top: 15px; border-top: 1.5px solid rgba(255,255,255,0.06); padding-top: 15px;">
-        <button id="sidebarAppInfoBtn" class="btn btn-secondary" style="width: 100%; font-size: 0.82rem; gap: 8px; font-weight: 600; display: flex; align-items: center; justify-content: center;">
-          <i class="fa-solid fa-circle-info" style="color: #38bdf8;"></i>
-          بيانات البرنامج والشركة المطورة
-        </button>
-      </div>
-
-      <div style="margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); text-align: center;">
-        <p style="font-size: 0.75rem; color: #38bdf8; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px;">
-          <i class="fa-solid fa-code"></i> تطوير وبرمجة: شركة LexEnginuity
-        </p>
-        <p style="font-size: 0.68rem; color: var(--text-muted); margin-top: 4px;">فكرة وإشراف: د. م. عمرو مصطفي حامد • الخبير الهندسي بوزارة العدل</p>
       </div>
     </div>
 
@@ -321,6 +404,17 @@
           <div id="closePrintModalBtn" class="close-btn" title="إغلاق">
             <i class="fa-solid fa-xmark"></i>
           </div>
+        </div>
+
+        <!-- Empty Profile Warning Banner -->
+        <div id="printProfileWarning" style="display: none; margin-bottom: 12px; padding: 10px 12px; background: rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.35); border-radius: 12px; align-items: center; justify-content: space-between; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 0.78rem; color: #fde047;">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span>سجّل بياناتك في الإعدادات لتظهر في التقرير</span>
+          </div>
+          <button type="button" id="openSettingsFromPrintBtn" style="padding: 4px 10px; font-size: 0.72rem; background: var(--accent-gold); color: #090d16; font-weight: 700; border-radius: 6px; border: none; cursor: pointer; white-space: nowrap;">
+            فتح الإعدادات
+          </button>
         </div>
 
         <!-- Quick Period Presets -->
@@ -671,10 +765,13 @@
           </p>
 
           <div class="backup-actions">
-            <button id="exportAlertsBtn" class="btn btn-primary export-btn">
+            <button id="shareBackupBtn" class="btn share-backup-btn" title="مشاركة النسخة الاحتياطية عبر واتساب، البريد، أو حفظها على درايف">
+              <i class="fa-brands fa-whatsapp"></i> مشاركة النسخة الاحتياطية
+            </button>
+            <button id="exportAlertsBtn" class="btn btn-primary export-btn" title="حفظ ملف النسخة الاحتياطية في ذاكرة الهاتف">
               <i class="fa-solid fa-file-export"></i> تصدير البيانات
             </button>
-            <button id="importAlertsBtn" class="btn btn-secondary import-btn">
+            <button id="importAlertsBtn" class="btn btn-secondary import-btn" title="استرجاع البيانات من ملف نسخة احتياطية">
               <i class="fa-solid fa-file-import"></i> استيراد البيانات
             </button>
             <input type="file" id="importFileInput" accept=".json" style="display: none;">
@@ -709,8 +806,8 @@
   <!-- Dedicated Printable Report Container (Hidden on Screen, Active only during Print) -->
   <div id="printableReportArea" class="printable-report-area"></div>
 
-  <!-- Audio element for notifications chime -->
-  <audio id="notifSound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-84.wav" preload="auto"></audio>
+  <!-- Audio element for notifications chime (Local offline chime) -->
+  <audio id="notifSound" src="assets/sounds/chime.wav" preload="auto"></audio>
 
   <!-- Application Logic JS -->
   <script src="app.js"></script>
