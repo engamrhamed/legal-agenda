@@ -639,6 +639,25 @@ function setupCustomAutocomplete(inputId, dropdownId, dataKey) {
 
   const wrapper = input.closest('.custom-autocomplete-wrapper');
 
+  function updatePosition() {
+    const inputRect = input.getBoundingClientRect();
+    // Get viewport height considering virtual keyboard via visualViewport if available
+    const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    const spaceBelow = viewportHeight - inputRect.bottom;
+    const spaceAbove = inputRect.top;
+
+    // If space below is less than 210px and space above is greater, open upward
+    if (spaceBelow < 210 && spaceAbove > spaceBelow) {
+      dropdown.classList.add('open-upward');
+      const maxH = Math.min(220, Math.max(120, spaceAbove - 20));
+      dropdown.style.maxHeight = `${maxH}px`;
+    } else {
+      dropdown.classList.remove('open-upward');
+      const maxH = Math.min(220, Math.max(120, spaceBelow - 20));
+      dropdown.style.maxHeight = `${maxH}px`;
+    }
+  }
+
   function renderList(query = '') {
     const list = customAutocompleteData[dataKey] || [];
     const trimmed = query.trim().toLowerCase();
@@ -654,6 +673,7 @@ function setupCustomAutocomplete(inputId, dropdownId, dataKey) {
         emptyEl.className = 'custom-autocomplete-empty';
         emptyEl.textContent = 'لا توجد مقترحات مطابقة (سيتم حفظ ما تكتبه)';
         dropdown.appendChild(emptyEl);
+        updatePosition();
         dropdown.classList.add('show');
         if (wrapper) wrapper.classList.add('is-open');
       } else {
@@ -694,14 +714,20 @@ function setupCustomAutocomplete(inputId, dropdownId, dataKey) {
       dropdown.appendChild(itemEl);
     });
 
+    updatePosition();
     dropdown.classList.add('show');
     if (wrapper) wrapper.classList.add('is-open');
   }
 
-  // Open & filter on focus / click
+  // Open & filter on focus / click with smooth scroll into view
   input.addEventListener('focus', () => {
     closeAllAutocompletes(dropdown);
     renderList(input.value);
+    // Smoothly ensure input is nicely visible when keyboard pops up
+    setTimeout(() => {
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      updatePosition();
+    }, 280);
   });
 
   input.addEventListener('click', () => {
@@ -715,6 +741,13 @@ function setupCustomAutocomplete(inputId, dropdownId, dataKey) {
   input.addEventListener('input', () => {
     renderList(input.value);
   });
+
+  // Reposition on viewport resize (virtual keyboard toggles) or scroll
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      if (dropdown.classList.contains('show')) updatePosition();
+    });
+  }
 
   // Toggle when clicking the arrow if present
   if (wrapper) {

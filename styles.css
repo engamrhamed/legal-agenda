@@ -791,6 +791,7 @@ textarea:focus {
 .custom-autocomplete-list {
   position: absolute;
   top: calc(100% + 4px);
+  bottom: auto;
   right: 0;
   left: 0;
   background: #0f172a;
@@ -805,6 +806,17 @@ textarea:focus {
   list-style: none;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+
+/* Open upwards when near bottom / virtual keyboard */
+.custom-autocomplete-list.open-upward {
+  top: auto;
+  bottom: calc(100% + 4px);
+  box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="light"] .custom-autocomplete-list.open-upward {
+  box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
 }
 
 [data-theme="light"] .custom-autocomplete-list {
