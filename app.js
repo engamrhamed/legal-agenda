@@ -1560,7 +1560,7 @@ async function showAddEditModal(caseId = null) {
     document.getElementById('dateTime').value = selectedDateTimeStr;
     const caseYearInput = document.getElementById('caseYear');
     if (caseYearInput) {
-      caseYearInput.value = getCurrentYearArabic();
+      caseYearInput.value = '';
     }
   }
 
