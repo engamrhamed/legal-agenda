@@ -624,6 +624,141 @@ function getCurrentYearArabic() {
   return String(currentYear).replace(/[0-9]/g, d => '٠١٢٣٤٥٦٧٨٩'[d]);
 }
 
+// In-memory options list for custom autocompletes
+const customAutocompleteData = {
+  caseType: [],
+  court: [],
+  procedureType: [],
+  appointmentType: []
+};
+
+function setupCustomAutocomplete(inputId, dropdownId, dataKey) {
+  const input = document.getElementById(inputId);
+  const dropdown = document.getElementById(dropdownId);
+  if (!input || !dropdown) return;
+
+  const wrapper = input.closest('.custom-autocomplete-wrapper');
+
+  function renderList(query = '') {
+    const list = customAutocompleteData[dataKey] || [];
+    const trimmed = query.trim().toLowerCase();
+    const filtered = trimmed
+      ? list.filter(item => item.toLowerCase().includes(trimmed))
+      : list;
+
+    dropdown.innerHTML = '';
+
+    if (filtered.length === 0) {
+      if (trimmed) {
+        const emptyEl = document.createElement('div');
+        emptyEl.className = 'custom-autocomplete-empty';
+        emptyEl.textContent = 'لا توجد مقترحات مطابقة (سيتم حفظ ما تكتبه)';
+        dropdown.appendChild(emptyEl);
+        dropdown.classList.add('show');
+        if (wrapper) wrapper.classList.add('is-open');
+      } else {
+        dropdown.classList.remove('show');
+        if (wrapper) wrapper.classList.remove('is-open');
+      }
+      return;
+    }
+
+    filtered.forEach(item => {
+      const itemEl = document.createElement('div');
+      itemEl.className = 'custom-autocomplete-item';
+
+      if (trimmed) {
+        // Highlight matching portion
+        const idx = item.toLowerCase().indexOf(trimmed);
+        if (idx !== -1) {
+          const before = item.substring(0, idx);
+          const match = item.substring(idx, idx + trimmed.length);
+          const after = item.substring(idx + trimmed.length);
+          itemEl.innerHTML = `${before}<span class="match-highlight">${match}</span>${after}`;
+        } else {
+          itemEl.textContent = item;
+        }
+      } else {
+        itemEl.textContent = item;
+      }
+
+      // Use pointerdown/mousedown so it fires before input blur
+      itemEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        input.value = item;
+        closeAllAutocompletes();
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+
+      dropdown.appendChild(itemEl);
+    });
+
+    dropdown.classList.add('show');
+    if (wrapper) wrapper.classList.add('is-open');
+  }
+
+  // Open & filter on focus / click
+  input.addEventListener('focus', () => {
+    closeAllAutocompletes(dropdown);
+    renderList(input.value);
+  });
+
+  input.addEventListener('click', () => {
+    if (!dropdown.classList.contains('show')) {
+      closeAllAutocompletes(dropdown);
+      renderList(input.value);
+    }
+  });
+
+  // Filter on input typing
+  input.addEventListener('input', () => {
+    renderList(input.value);
+  });
+
+  // Toggle when clicking the arrow if present
+  if (wrapper) {
+    const arrow = wrapper.querySelector('.custom-autocomplete-arrow');
+    if (arrow) {
+      arrow.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (dropdown.classList.contains('show')) {
+          dropdown.classList.remove('show');
+          wrapper.classList.remove('is-open');
+        } else {
+          input.focus();
+          closeAllAutocompletes(dropdown);
+          renderList(input.value);
+        }
+      });
+    }
+  }
+}
+
+function closeAllAutocompletes(exceptDropdown = null) {
+  document.querySelectorAll('.custom-autocomplete-list').forEach(dd => {
+    if (dd !== exceptDropdown) {
+      dd.classList.remove('show');
+      const w = dd.closest('.custom-autocomplete-wrapper');
+      if (w) w.classList.remove('is-open');
+    }
+  });
+}
+
+// Global click outside listener to close custom dropdowns
+document.addEventListener('pointerdown', (e) => {
+  if (!e.target.closest('.custom-autocomplete-wrapper')) {
+    closeAllAutocompletes();
+  }
+});
+
+function initCustomAutocompletes() {
+  setupCustomAutocomplete('caseType', 'caseTypeListDropdown', 'caseType');
+  setupCustomAutocomplete('court', 'courtListDropdown', 'court');
+  setupCustomAutocomplete('procedureType', 'procedureTypeListDropdown', 'procedureType');
+  setupCustomAutocomplete('appointmentType', 'appointmentTypeListDropdown', 'appointmentType');
+}
+
 function updateDatalists() {
   const lawsuitVal = localStorage.getItem('lawsuitTypes') || '';
   const procedureVal = localStorage.getItem('procedureTypes') || '';
@@ -633,6 +768,31 @@ function updateDatalists() {
   const procedureList = procedureVal.split(',').map(s => s.trim()).filter(Boolean);
   const appointmentList = appointmentVal.split(',').map(s => s.trim()).filter(Boolean);
 
+  // Collect all unique courts previously entered in cases/missions
+  const courtsFromCases = (state.allCases || [])
+    .filter(c => c.entryType === 'case' || !c.entryType)
+    .map(c => c.court && c.court.trim())
+    .filter(Boolean);
+
+  // Also get saved courts from localStorage
+  const savedCourtVal = localStorage.getItem('courtList') || '';
+  const savedCourts = savedCourtVal.split(',').map(s => s.trim()).filter(Boolean);
+
+  // Merge and deduplicate
+  const allCourts = [...new Set([...courtsFromCases, ...savedCourts])];
+
+  // If new courts were found in cases that aren't yet in localStorage, persist them
+  if (courtsFromCases.length > 0 && allCourts.length !== savedCourts.length) {
+    localStorage.setItem('courtList', allCourts.join(', '));
+  }
+
+  // Update in-memory data for custom dropdowns
+  customAutocompleteData.caseType = lawsuitList;
+  customAutocompleteData.procedureType = procedureList;
+  customAutocompleteData.appointmentType = appointmentList;
+  customAutocompleteData.court = allCourts;
+
+  // Keep compatibility with legacy datalist if still present
   const lawsuitDatalist = document.getElementById('caseTypeList');
   const procedureDatalist = document.getElementById('procedureTypeList');
   const appointmentDatalist = document.getElementById('appointmentTypeList');
@@ -667,35 +827,16 @@ function updateDatalists() {
 
   if (courtDatalist) {
     courtDatalist.innerHTML = '';
-
-    // Collect all unique courts previously entered in cases/missions
-    const courtsFromCases = (state.allCases || [])
-      .filter(c => c.entryType === 'case' || !c.entryType)
-      .map(c => c.court && c.court.trim())
-      .filter(Boolean);
-
-    // Also get saved courts from localStorage
-    const savedCourtVal = localStorage.getItem('courtList') || '';
-    const savedCourts = savedCourtVal.split(',').map(s => s.trim()).filter(Boolean);
-
-    // Merge and deduplicate
-    const allCourts = [...new Set([...courtsFromCases, ...savedCourts])];
-
-    // If new courts were found in cases that aren't yet in localStorage, persist them
-    if (courtsFromCases.length > 0 && allCourts.length !== savedCourts.length) {
-      localStorage.setItem('courtList', allCourts.join(', '));
-    }
-
     allCourts.forEach(item => {
       const opt = document.createElement('option');
       opt.value = item;
       courtDatalist.appendChild(opt);
     });
+  }
 
-    const courtTextarea = document.getElementById('settingsCourtList');
-    if (courtTextarea && document.activeElement !== courtTextarea) {
-      courtTextarea.value = allCourts.join(', ');
-    }
+  const courtTextarea = document.getElementById('settingsCourtList');
+  if (courtTextarea && document.activeElement !== courtTextarea) {
+    courtTextarea.value = allCourts.join(', ');
   }
 }
 
@@ -3507,6 +3648,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     reminderSystem.init();
     searchController.init();
     printManager.init();
+    initCustomAutocompletes();
 
     // Sync native alarms / reminders with Android system
     syncNativeReminders();

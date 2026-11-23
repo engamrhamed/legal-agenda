@@ -558,27 +558,30 @@
             <div class="form-row">
               <div class="form-group" style="grid-column: span 2;">
                 <label for="caseType">نوع الدعوى *</label>
-                <input type="text" id="caseType" list="caseTypeList" placeholder="اختر نوع الدعوى أو اكتبه...">
-                <datalist id="caseTypeList">
-                  <!-- Populated dynamically via JS settings -->
-                </datalist>
+                <div class="custom-autocomplete-wrapper">
+                  <input type="text" id="caseType" autocomplete="off" placeholder="اختر نوع الدعوى أو اكتبه...">
+                  <span class="custom-autocomplete-arrow">▼</span>
+                  <div class="custom-autocomplete-list" id="caseTypeListDropdown"></div>
+                </div>
               </div>
             </div>
             
             <div class="form-group">
               <label for="court">الجهة المحيلة / المحكمة *</label>
-              <input type="text" id="court" list="courtList" placeholder="اختر المحكمة/الجهة أو اكتب جهة جديدة...">
-              <datalist id="courtList">
-                <!-- Populated dynamically from previously entered courts -->
-              </datalist>
+              <div class="custom-autocomplete-wrapper">
+                <input type="text" id="court" autocomplete="off" placeholder="اختر المحكمة/الجهة أو اكتب جهة جديدة...">
+                <span class="custom-autocomplete-arrow">▼</span>
+                <div class="custom-autocomplete-list" id="courtListDropdown"></div>
+              </div>
             </div>
 
             <div class="form-group">
               <label for="procedureType">نوع الإجراء *</label>
-              <input type="text" id="procedureType" list="procedureTypeList" placeholder="اختر نوع الإجراء أو اكتبه...">
-              <datalist id="procedureTypeList">
-                <!-- Populated dynamically via JS settings -->
-              </datalist>
+              <div class="custom-autocomplete-wrapper">
+                <input type="text" id="procedureType" autocomplete="off" placeholder="اختر نوع الإجراء أو اكتبه...">
+                <span class="custom-autocomplete-arrow">▼</span>
+                <div class="custom-autocomplete-list" id="procedureTypeListDropdown"></div>
+              </div>
             </div>
             
             <div class="form-group">
@@ -596,10 +599,11 @@
 
             <div class="form-group">
               <label for="appointmentType">تصنيف نوع الموعد *</label>
-              <input type="text" id="appointmentType" list="appointmentTypeList" placeholder="اختر تصنيف الموعد أو اكتبه...">
-              <datalist id="appointmentTypeList">
-                <!-- Populated dynamically via JS settings -->
-              </datalist>
+              <div class="custom-autocomplete-wrapper">
+                <input type="text" id="appointmentType" autocomplete="off" placeholder="اختر تصنيف الموعد أو اكتبه...">
+                <span class="custom-autocomplete-arrow">▼</span>
+                <div class="custom-autocomplete-list" id="appointmentTypeListDropdown"></div>
+              </div>
             </div>
 
             <div class="form-group">
