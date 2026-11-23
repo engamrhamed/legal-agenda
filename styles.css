@@ -831,15 +831,16 @@ textarea:focus {
 
 .custom-autocomplete-item {
   padding: 10px 14px;
-  font-size: 0.88rem;
+  font-size: 0.9rem;
   color: var(--text-primary);
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  line-height: 1.4;
+  display: block;
+  text-align: right;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .custom-autocomplete-item:hover,
